@@ -1,0 +1,28 @@
+DiffNet is a Python tool for finding optimal allocations of sampling
+in computational or experimental measurements of the individual
+quantities and their pairwise differences, so as to minimize the covariance
+in the estimated quantities.
+
+DiffNet depends on CVXOPT (http://cvxopt.org) and networkx
+(https://networkx.github.io/).  You can install these two libraries using
+anaconda:
+
+conda install -c conda-forge cvxopt
+conda install -c anaconda networkx
+
+DiffNet is free open source software.  NO WARRANTY, Use AS IS.
+
+Copyright (C) 2018-2019 Huafeng Xu
+
+Some examples are provided in examples.py.
+
+If you use DiffNet in a published work, please cite 
+
+Huafeng Xu, Optimal measurement network of pairwise differences, 2019.
+
+
+
+
+
+
+
