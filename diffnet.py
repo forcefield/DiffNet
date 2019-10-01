@@ -14,6 +14,8 @@ Released as free software.  NO WARRANTY.  Use AS IS.
 
   Copyright (C) 2018-2019 
   Huafeng Xu
+  
+Cite https://arxiv.org/abs/1906.08599 if you use this in a publication.
 '''
 
 import numpy as np
