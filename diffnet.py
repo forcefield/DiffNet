@@ -558,6 +558,53 @@ def covariance( sij, nij):
     C = linalg.inv( F)
     return C
 
+def diffnet_iterate( Nsofar, Nadd, nopt):
+    '''
+    In an iterative optimization of the difference network, the
+    optimal allocation is updated with the estimate of s_{ij}, and we
+    need to allocate the next iteration of sampling based on what has
+    already been sampled for each pair.
+
+    Args:
+
+    Nsofar: KxK symmetric matrix, where Nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
+    Nadd: int, Nadd gives the additional number of samples to be collected in
+    the next iteration.
+    nopt: KxK symmetric matrix, where nopt[i,j] is the optimal fraction of 
+    samples to be allocated to the measurement of the difference between 
+    i and j. 
+
+    Return:
+
+    KxK symmetric matrix of integers, the (i,j) element of which gives the
+    number of samples to be allocated to the measurement of (i,j) difference
+    in the next iteration.
+    '''
+    K = nopt.size[0]
+    Nnext = np.zeros( (K, K), dtype=int)
+    Ntotal = sum_upper_triangle( matrix(Nsofar))
+    Nopt = np.asarray( nopt*(Ntotal + Nadd), dtype=int)
+    # If a pair has already been sampled more than its optimal allocation, 
+    # move its allocation to other pairs in proportion to the latter's 
+    # allocation.
+    extra = 0
+    normalize = 0
+    for i in xrange( K):
+        for j in xrange( i, K):
+            if Nopt[i,j] < Nsofar[i,j]:
+                extra += (Nsofar[i,j] - Nopt[i,j])
+            else:
+                normalize += (Nopt[i,j] - Nsofar[i,j])
+    scale = 1. - extra/float(normalize)
+    for i in xrange( K):
+        for j in xrange( i, K):
+            if Nopt[i,j] > Nsofar[i,j]:
+                Nnext[i,j] = int((Nopt[i,j] - Nsofar[i,j])*scale)
+                Nnext[j,i] = Nnext[i,j]
+    return Nnext
+    
+
 def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     '''
     Return True if nij is the optimal.
