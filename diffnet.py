@@ -560,7 +560,7 @@ def covariance( sij, nij):
     C = linalg.inv( F)
     return C
 
-def diffnet_iterate( Nsofar, Nadd, nopt):
+def update_A_optimal( sij, nsofar, nadd):
     '''
     In an iterative optimization of the difference network, the
     optimal allocation is updated with the estimate of s_{ij}, and we
@@ -569,13 +569,14 @@ def diffnet_iterate( Nsofar, Nadd, nopt):
 
     Args:
 
-    Nsofar: KxK symmetric matrix, where Nsofar[i,j] is the number of samples
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
     that has already been collected for (i,j) pair.
-    Nadd: int, Nadd gives the additional number of samples to be collected in
+    nadd: int, Nadd gives the additional number of samples to be collected in
     the next iteration.
-    nopt: KxK symmetric matrix, where nopt[i,j] is the optimal fraction of 
-    samples to be allocated to the measurement of the difference between 
-    i and j. 
 
     Return:
 
@@ -583,29 +584,103 @@ def diffnet_iterate( Nsofar, Nadd, nopt):
     number of samples to be allocated to the measurement of (i,j) difference
     in the next iteration.
     '''
-    K = nopt.size[0]
-    Nnext = np.zeros( (K, K), dtype=int)
-    Ntotal = sum_upper_triangle( matrix(Nsofar))
-    Nopt = np.asarray( nopt*(Ntotal + Nadd), dtype=int)
-    # If a pair has already been sampled more than its optimal allocation, 
-    # move its allocation to other pairs in proportion to the latter's 
-    # allocation.
-    extra = 0
-    normalize = 0
-    for i in xrange( K):
-        for j in xrange( i, K):
-            if Nopt[i,j] < Nsofar[i,j]:
-                extra += (Nsofar[i,j] - Nopt[i,j])
-            else:
-                normalize += (Nopt[i,j] - Nsofar[i,j])
-    scale = 1. - extra/float(normalize)
-    for i in xrange( K):
-        for j in xrange( i, K):
-            if Nopt[i,j] > Nsofar[i,j]:
-                Nnext[i,j] = int((Nopt[i,j] - Nsofar[i,j])*scale)
-                Nnext[j,i] = Nnext[i,j]
-    return Nnext
+    assert( sij.size[0] == sij.size[1])
+    K = sij.size[0]
+    M = K*(K+1)/2
+    # x = ( n, u ), where u=(u_1,u_2,...,u_K) is the dual variables.
+    # We will minimize \sum_k u_k = c.x
+    c = matrix( [0.]*M + [1.]*K )
+
+    # Subject to the following constraints
+    # \sum_{m=1}^M (n_m + dn_m) [ [ v_m.v_m^t, 0 ], [0, 0] ]
+    # + u_k [ [0, 0], [0, 1] ] + [ [0, e_k], [e_k^t, 0] ] >= 0
+    # for k = 1,2,...,K
+    # where M = K*(K+1)/2 are the number of types of measurements.
+    # m index the measurements, m = (i,j).
+    # v_m is a length K measurement vector, where 
+    #     v_{(i,i), a} = s_{ii}^{-1}\delta_{i,a}
+    #     v_{(i,j), a} = s_{ij]^{-1}\delta_{i,a} - s_{ij}^{-1}\delta_{j,a}
+    # The matrix U_m = v_m.v_m^t is
+    # U_{(i,i), (a,b)} = s_{ii}^{-2}\delta_{i,a}\delta_{i,b}
+    # U_{(i,j), (a,b)} 
+    #     = s_{ij}^{-2}(\delta_{i,a}\delta_{i,b} + \delta_{j,a}\delta_{j,b}) 
+    #     - s_{ij}^{-2}(\delta_{i,a}\delta_{j,b} + \delta_{j,a}\delta_{i,b})
+    # where \delta_{i,a} = 1 if i==a else 0 is the Kronecker delta.
     
+    # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
+    # column-major vector representing the KxK matrix of U_m augmented
+    # by a length K vector, hence the dimension (K+1)x(K+1).
+    Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    
+    for i in xrange( K):
+        # The index of matrix element (i,i) in column-major representation
+        # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
+        v2 = 1./(sij[i,i]*sij[i,i])
+        Gs[0][i*(K+2), i] = v2
+        hs[0][i,i] = nsofar[i,i]*v2
+        for j in xrange( K):
+            if j!=i: hs[0][i,i] += nsofar[i,j]/(sij[i,j]*sij[i,j])
+        for j in xrange( i+1, K):
+            m = measurement_index( i, j, K)
+            # The index of matrix element (i,j) in column-major representation
+            # of a (K+1)x(K+1) matrix is j*(K+1) + i
+            v2 = 1./(sij[i,j]*sij[i,j])
+            Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            hs[0][i,j] = hs[0][j,i] = -nsofar[i,j]*v2
+
+    # G.(x, u) + e >=0 <=> -G.(x, u) <= e
+    Gs[0] *= -1.
+
+    for k in xrange( K):
+        if (k>0): 
+            Gs[k][:,:M] = Gs[0][:,:M]
+            hs[k][:K,:K] = hs[0][:K,:K]
+        # for the term u_k [ [0, 0], [0, 1] ]
+        Gs[k][-1, M+k] = -1.
+        
+        hs[k][k,-1] = hs[k][-1,k] = 1.
+
+    # The constraint dn >= 0, as G0.x <= h0
+    G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    h0 = matrix( np.zeros( M + K))
+
+    # The constraint \sum_m dn_m = nadd.
+    A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    b = matrix( float(nadd), (1, 1) )
+    
+    sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
+    dn = solution_to_nij( sol, K)
+
+    return dn
+
+def round_to_integers( n):
+    '''
+    Round the allocations n_{e} to nearest integers i(n_e) = \floor{n_e} or
+    \ceil{n_e} so that
+    
+    \sum_e i(n_e) = \sum_e n_e
+    '''
+    K = matrix( n).size[0]
+    nsum = 0
+    nceilsum = 0
+    edges = []
+    nint = np.zeros( (K, K), dtype=int)
+    for i in xrange(K):
+        for j in xrange(i, K):
+            nsum += n[i,j]
+            nint[i,j] = nint[j,i] = int(np.ceil( n[i,j]))
+            nceilsum += nint[i,j]
+            heapq.heappush( edges, (-n[i,j], (i,j)))
+    nsum = int(np.floor(nsum + 0.5))
+    surplus = nceilsum - nsum
+    for k in xrange( surplus):
+        d, (i, j) = heapq.heappop( edges)
+        nint[i,j] -= 1
+        nint[j,i] = nint[i,j]
+    
+    return nint
 
 def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     '''
@@ -636,6 +711,48 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
         df[t] = fCp - fC[optimality]
     print df
     return np.all( df >= 0)
+
+def check_update_A_optimal( sij, delta=5e-1, ntimes=10):
+    '''
+    '''
+    K = matrix(sij).size[0]
+
+    sij0 = np.random.rand( K, K)
+    sij0 = matrix(0.5*(sij0 + sij0.T))
+
+    nsofar = 100*A_optimize( sij0)
+
+    nadd = 100
+    nnext = update_A_optimal( sij, nsofar, nadd)
+    ntotal = matrix( nsofar + nnext)
+
+    C = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
+    trC = np.trace( C)
+
+    dtr = np.zeros( ntimes)
+    for t in xrange( ntimes):
+        zeta = matrix( 1. + 2*delta*(np.random.rand( K, K) - 0.5))
+        nnextp = cvxopt.mul( nnext, zeta)
+        nnextp = 0.5*(nnextp + nnextp.trans())
+        s = sum_upper_triangle( nnextp)
+        nnextp *= (nadd/sum_upper_triangle( nnextp))
+        ntotal = matrix( nsofar + nnextp)
+        Cp = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
+        dtr[t] = np.trace( Cp) - trC
+
+    tol = 1e-10
+    success = np.all( dtr[np.abs(dtr/trC) > tol] >= 0)
+    # success = np.all( dtr >= 0)
+    if not success:
+        print 'Iterative update of A-optimal failed to minimize tr(C)=%f!' % trC
+        print dtr
+    
+    nnext = round_to_integers( nnext)
+    if sum_upper_triangle( matrix(nnext)) != nadd:
+        print 'Failed to allocate additional samples to preserve the sum!'
+        print '%d != %d' % (sum_upper_triangle( matrix(nnext)), nadd)
+
+    return np.all( dtr >= 0)
 
 def check_hessian( dF, d2F, x0):
     '''
@@ -770,6 +887,11 @@ def unitTest( tol=1.e-4):
             print '%s-optimality check passed!' % o
         else:
             print '%s-optimality check failed!' % o
-        
+    
+    # Check iteration update
+    success = check_update_A_optimal( sij)
+    if success:
+        print 'Iterative update of A-optimal passed!'
+    
 if __name__ == '__main__':
     unitTest()
