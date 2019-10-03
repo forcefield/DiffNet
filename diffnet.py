@@ -618,9 +618,7 @@ def update_A_optimal( sij, nsofar, nadd):
         # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
         v2 = 1./(sij[i,i]*sij[i,i])
         Gs[0][i*(K+2), i] = v2
-        hs[0][i,i] = nsofar[i,i]*v2
-        for j in xrange( K):
-            if j!=i: hs[0][i,i] += nsofar[i,j]/(sij[i,j]*sij[i,j])
+        hs[0][i,i] += nsofar[i,i]*v2
         for j in xrange( i+1, K):
             m = measurement_index( i, j, K)
             # The index of matrix element (i,j) in column-major representation
@@ -628,7 +626,10 @@ def update_A_optimal( sij, nsofar, nadd):
             v2 = 1./(sij[i,j]*sij[i,j])
             Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
             Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
-            hs[0][i,j] = hs[0][j,i] = -nsofar[i,j]*v2
+            nv2 = nsofar[i,j]*v2
+            hs[0][i,j] = hs[0][j,i] = -nv2
+            hs[0][i,i] += nv2
+            hs[0][j,j] += nv2
 
     # G.(x, u) + e >=0 <=> -G.(x, u) <= e
     Gs[0] *= -1.
