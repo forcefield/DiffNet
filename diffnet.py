@@ -713,10 +713,32 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     print df
     return np.all( df >= 0)
 
-def check_update_A_optimal( sij, delta=5e-1, ntimes=10):
+def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
     '''
     '''
     K = matrix(sij).size[0]
+
+    ntotal = 100
+    fopt = A_optimize( sij)
+    nopt = ntotal*fopt
+    # remove some random samples from the optimal
+    nsofar = nopt - nopt*0.1*np.random.rand( K, K)
+    nsofar = matrix( 0.5*(nsofar + nsofar.T))
+    nadd = ntotal - sum_upper_triangle( nsofar)
+    nnext = update_A_optimal( sij, nsofar, nadd)
+    success1 = True
+    if np.abs(sum_upper_triangle( matrix(nnext)) - nadd) > tol:
+        print 'Failed to allocate additional samples to preserve the sum!'
+        print '|%f - %f| > %f' % (sum_upper_triangle( matrix(nnext)), nadd, tol)
+        success1 = False
+    # The new samples and the existing samples should together make up the 
+    # optimal allocation.
+    delta = sum_upper_triangle( abs( nnext + nsofar - nopt))/ntotal
+    delta /= (0.5*K*(K+1))
+    if delta > tol:
+        print 'Failed: Updating allocation does not yield A-optimal!'
+        print 'delta = %f > %f' % (delta, tol)
+        success1 = False
 
     sij0 = np.random.rand( K, K)
     sij0 = matrix(0.5*(sij0 + sij0.T))
@@ -741,10 +763,9 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10):
         Cp = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
         dtr[t] = np.trace( Cp) - trC
 
-    tol = 1e-10
-    success = np.all( dtr[np.abs(dtr/trC) > tol] >= 0)
-    # success = np.all( dtr >= 0)
-    if not success:
+    success2 = np.all( dtr[np.abs(dtr/trC) > tol] >= 0)
+    # success2 = np.all( dtr >= 0)
+    if not success2:
         print 'Iterative update of A-optimal failed to minimize tr(C)=%f!' % trC
         print dtr
     
@@ -752,8 +773,9 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10):
     if sum_upper_triangle( matrix(nnext)) != nadd:
         print 'Failed to allocate additional samples to preserve the sum!'
         print '%d != %d' % (sum_upper_triangle( matrix(nnext)), nadd)
+        success2 = False
 
-    return np.all( dtr >= 0)
+    return success1 and success2
 
 def check_hessian( dF, d2F, x0):
     '''
