@@ -23,6 +23,9 @@ from scipy import linalg
 import cvxopt 
 from cvxopt import matrix
 import heapq
+import networkx as nx
+
+import graph
 
 try:
     from scipy.linalg import null_space
@@ -63,7 +66,7 @@ def sum_upper_triangle( x):
             s += x[i,j]
     return s
 
-def solution_to_nij( sol, K):
+def solution_to_nij( sol, K, measure_indices=None):
     '''
     Get the KxK n[i][j] symmetric matrix for fractions of measurements from the
     CVXOPT solution.
@@ -74,9 +77,18 @@ def solution_to_nij( sol, K):
     # print x
     n = matrix( 0., (K, K))
     for i in xrange(K):
-        n[i,i] = x[i]
+        if measure_indices is not None:
+            m = measure_indices.get( (i,i), None)
+            if m is not None:
+                n[i,i] = x[m]
+        else:
+            n[i,i] = x[i]
         for j in xrange(i+1, K):
-            m = measurement_index( i, j, K)
+            if measure_indices is not None:
+                m = measure_indices.get( (i,j), None)
+                if m is None: continue
+            else:
+                m = measurement_index( i, j, K)
             n[i,j] = n[j,i] = x[m]
     return n
 
@@ -285,6 +297,122 @@ def A_optimize( sij):
     n = solution_to_nij( sol, K)
 
     return n
+
+def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
+    '''
+    In an iterative optimization of the difference network, the
+    optimal allocation is updated with the estimate of s_{ij}, and we
+    need to allocate the next iteration of sampling based on what has
+    already been sampled for each pair.
+
+    Args:
+
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
+    nadd: int, Nadd gives the additional number of samples to be collected in
+    the next iteration.
+    only_include_measurements: set of pairs, if not None, indicate which 
+    pairs should be considered in the optimal network.  Any pair (i,j) not in 
+    the set will be excluded in the allocation (i.e. dn[i,j] = 0).  The pair
+    (i,j) in the set must be ordered so that i<=j. 
+
+    Return:
+
+    KxK symmetric matrix of float, the (i,j) element of which gives the
+    number of samples to be allocated to the measurement of (i,j) difference
+    in the next iteration.
+    '''
+    assert( sij.size[0] == sij.size[1])
+    K = sij.size[0]
+    if only_include_measurements is None:
+        M = K*(K+1)/2
+    else:
+        M = len(only_include_measurements)
+        measure_indices = dict()
+        for mid, (i,j) in enumerate( only_include_measurements):
+            measure_indices[(i,j)] = mid
+
+    # x = ( n, u ), where u=(u_1,u_2,...,u_K) is the dual variables.
+    # We will minimize \sum_k u_k = c.x
+    c = matrix( [0.]*M + [1.]*K )
+
+    # Subject to the following constraints
+    # \sum_{m=1}^M (n_m + dn_m) [ [ v_m.v_m^t, 0 ], [0, 0] ]
+    # + u_k [ [0, 0], [0, 1] ] + [ [0, e_k], [e_k^t, 0] ] >= 0
+    # for k = 1,2,...,K
+    # where M = K*(K+1)/2 are the number of types of measurements.
+    # m index the measurements, m = (i,j).
+    # v_m is a length K measurement vector, where 
+    #     v_{(i,i), a} = s_{ii}^{-1}\delta_{i,a}
+    #     v_{(i,j), a} = s_{ij]^{-1}\delta_{i,a} - s_{ij}^{-1}\delta_{j,a}
+    # The matrix U_m = v_m.v_m^t is
+    # U_{(i,i), (a,b)} = s_{ii}^{-2}\delta_{i,a}\delta_{i,b}
+    # U_{(i,j), (a,b)} 
+    #     = s_{ij}^{-2}(\delta_{i,a}\delta_{i,b} + \delta_{j,a}\delta_{j,b}) 
+    #     - s_{ij}^{-2}(\delta_{i,a}\delta_{j,b} + \delta_{j,a}\delta_{i,b})
+    # where \delta_{i,a} = 1 if i==a else 0 is the Kronecker delta.
+    
+    # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
+    # column-major vector representing the KxK matrix of U_m augmented
+    # by a length K vector, hence the dimension (K+1)x(K+1).
+    Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    
+    for i in xrange( K):
+        # The index of matrix element (i,i) in column-major representation
+        # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
+        v2 = 1./(sij[i,i]*sij[i,i])
+        if (only_include_measurements is not None):
+            m = measure_indices.get( (i,i), None)
+            if m is not None:
+                Gs[0][i*(K+2), m] = v2
+        else:
+            Gs[0][i*(K+2), i] = v2
+        hs[0][i,i] += nsofar[i,i]*v2
+        for j in xrange( i+1, K):
+            # The index of matrix element (i,j) in column-major representation
+            # of a (K+1)x(K+1) matrix is j*(K+1) + i
+            v2 = 1./(sij[i,j]*sij[i,j])
+            nv2 = nsofar[i,j]*v2
+            hs[0][i,j] = hs[0][j,i] = -nv2
+            hs[0][i,i] += nv2
+            hs[0][j,j] += nv2
+            if (only_include_measurements is not None):
+                m = measure_indices.get( (i,j), None)
+                if m is None: continue
+            else:        
+                m = measurement_index( i, j, K)
+            Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+
+    # G.(x, u) + e >=0 <=> -G.(x, u) <= e
+    Gs[0] *= -1.
+
+    for k in xrange( K):
+        if (k>0): 
+            Gs[k][:,:M] = Gs[0][:,:M]
+            hs[k][:K,:K] = hs[0][:K,:K]
+        # for the term u_k [ [0, 0], [0, 1] ]
+        Gs[k][-1, M+k] = -1.
+        
+        hs[k][k,-1] = hs[k][-1,k] = 1.
+
+    # The constraint dn >= 0, as G0.x <= h0
+    G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    h0 = matrix( np.zeros( M + K))
+
+    # The constraint \sum_m dn_m = nadd.
+    A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    b = matrix( float(nadd), (1, 1) )
+    
+    sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
+    dn = solution_to_nij( sol, K, only_include_measurements and measure_indices)
+
+    return dn
 
 def E_optimize( sij):
     '''
@@ -560,102 +688,6 @@ def covariance( sij, nij):
     C = linalg.inv( F)
     return C
 
-def update_A_optimal( sij, nsofar, nadd):
-    '''
-    In an iterative optimization of the difference network, the
-    optimal allocation is updated with the estimate of s_{ij}, and we
-    need to allocate the next iteration of sampling based on what has
-    already been sampled for each pair.
-
-    Args:
-
-    sij: KxK symmetric matrix, where the measurement variance of the
-    difference between i and j is proportional to s[i][j]^2 =
-    s[j][i]^2, and the measurement variance of i is proportional to
-    s[i][i]^2.
-    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
-    that has already been collected for (i,j) pair.
-    nadd: int, Nadd gives the additional number of samples to be collected in
-    the next iteration.
-
-    Return:
-
-    KxK symmetric matrix of integers, the (i,j) element of which gives the
-    number of samples to be allocated to the measurement of (i,j) difference
-    in the next iteration.
-    '''
-    assert( sij.size[0] == sij.size[1])
-    K = sij.size[0]
-    M = K*(K+1)/2
-    # x = ( n, u ), where u=(u_1,u_2,...,u_K) is the dual variables.
-    # We will minimize \sum_k u_k = c.x
-    c = matrix( [0.]*M + [1.]*K )
-
-    # Subject to the following constraints
-    # \sum_{m=1}^M (n_m + dn_m) [ [ v_m.v_m^t, 0 ], [0, 0] ]
-    # + u_k [ [0, 0], [0, 1] ] + [ [0, e_k], [e_k^t, 0] ] >= 0
-    # for k = 1,2,...,K
-    # where M = K*(K+1)/2 are the number of types of measurements.
-    # m index the measurements, m = (i,j).
-    # v_m is a length K measurement vector, where 
-    #     v_{(i,i), a} = s_{ii}^{-1}\delta_{i,a}
-    #     v_{(i,j), a} = s_{ij]^{-1}\delta_{i,a} - s_{ij}^{-1}\delta_{j,a}
-    # The matrix U_m = v_m.v_m^t is
-    # U_{(i,i), (a,b)} = s_{ii}^{-2}\delta_{i,a}\delta_{i,b}
-    # U_{(i,j), (a,b)} 
-    #     = s_{ij}^{-2}(\delta_{i,a}\delta_{i,b} + \delta_{j,a}\delta_{j,b}) 
-    #     - s_{ij}^{-2}(\delta_{i,a}\delta_{j,b} + \delta_{j,a}\delta_{i,b})
-    # where \delta_{i,a} = 1 if i==a else 0 is the Kronecker delta.
-    
-    # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
-    # column-major vector representing the KxK matrix of U_m augmented
-    # by a length K vector, hence the dimension (K+1)x(K+1).
-    Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
-    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
-    
-    for i in xrange( K):
-        # The index of matrix element (i,i) in column-major representation
-        # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
-        v2 = 1./(sij[i,i]*sij[i,i])
-        Gs[0][i*(K+2), i] = v2
-        hs[0][i,i] += nsofar[i,i]*v2
-        for j in xrange( i+1, K):
-            m = measurement_index( i, j, K)
-            # The index of matrix element (i,j) in column-major representation
-            # of a (K+1)x(K+1) matrix is j*(K+1) + i
-            v2 = 1./(sij[i,j]*sij[i,j])
-            Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
-            Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
-            nv2 = nsofar[i,j]*v2
-            hs[0][i,j] = hs[0][j,i] = -nv2
-            hs[0][i,i] += nv2
-            hs[0][j,j] += nv2
-
-    # G.(x, u) + e >=0 <=> -G.(x, u) <= e
-    Gs[0] *= -1.
-
-    for k in xrange( K):
-        if (k>0): 
-            Gs[k][:,:M] = Gs[0][:,:M]
-            hs[k][:K,:K] = hs[0][:K,:K]
-        # for the term u_k [ [0, 0], [0, 1] ]
-        Gs[k][-1, M+k] = -1.
-        
-        hs[k][k,-1] = hs[k][-1,k] = 1.
-
-    # The constraint dn >= 0, as G0.x <= h0
-    G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
-    h0 = matrix( np.zeros( M + K))
-
-    # The constraint \sum_m dn_m = nadd.
-    A = matrix( [1.]*M + [0.]*K, (1, M + K) )
-    b = matrix( float(nadd), (1, 1) )
-    
-    sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
-    dn = solution_to_nij( sol, K)
-
-    return dn
-
 def round_to_integers( n):
     '''
     Round the allocations n_{e} to nearest integers i(n_e) = \floor{n_e} or
@@ -682,6 +714,117 @@ def round_to_integers( n):
         nint[j,i] = nint[i,j]
     
     return nint
+
+def MST_optimize( sij, allocation='std'):
+    '''
+    Measure the differences through a minimum spanning tree.
+
+    Args:
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+
+    allocation: string - can be 'std', 'var', or 'n'. 
+    if 'std', allocate n_{ij} \propto s_{ij},
+    if 'var', allocate n_{ij} \propto s_{ij}^2
+    if 'n', allocate n_{ij} = const
+    n_{ij} = 0 for all (i,j) that are not part of the minimum spanning tree.
+
+    Return:
+    n: KxK symmetric matrix, where n[i][j] is the fraction of measurements
+    to be performed for the difference between i and j, satisfying  
+    \sum_i n[i][i] + \sum_{i<j} n[i][j] = 1.
+    '''
+    K = sij.size[0]
+    G = graph.diffnet_to_graph( sij)
+    T = nx.minimum_spanning_tree( G)
+    n = matrix( 0., (K, K))
+    for i, j, data in T.edges( data=True):
+        weight = data['weight']
+        if allocation == 'var':
+            weight *= weight
+        elif allocation == 'n':
+            weight = 1.
+        if i=='O':
+            n[j,j] = weight
+        elif j=='O':
+            n[i,i] = weight
+        else:
+            n[i,j] = n[j,i] = weight
+    s = sum_upper_triangle( n)
+    n *= (1./s)  # So that \sum_{i<=j} n_{ij} = 1
+    return n
+
+def sparse_A_optimal_network( sij, nsofar, nadd, max_measure, connectivity=2):
+    '''
+    Construct a sparse A-optimal network, so that (approximately) only
+    max_measure different measurements will receive resource
+    allocations, while guaranteeing the given degree of connectivity.
+
+    Args:
+
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
+    nadd: float, nadd gives the additional number of samples to be collected in
+    the next iteration.
+    max_measure: int, the number of measurements to receive allocations.  
+    The actual number of measurements with non-zero allocation might exceed
+    this number in order to guarantee the connectivity.
+    connectivity: int, ensure that the resulting difference network is k-edge
+    connected.
+
+    Return:
+
+    KxK symmetric matrix of float, the (i,j) element of which gives the
+    number of samples to be allocated to the measurement of (i,j) difference
+    in the next iteration.
+    
+    '''
+    K = sij.size[0]
+
+    # First, get the dense optimal network
+    nij = update_A_optimal( sij, nsofar, nadd)
+    
+    # Next, get the k-connected graph that approximately minimizes the 
+    # sum of 1/n_{ij}.
+    G = nx.Graph()
+    G.add_nodes_from( range( K))
+    G.add_node( 'O')
+    edges = []
+
+    def weight( n, epsilon=1e-10):
+        large = 1/epsilon
+        if n > epsilon:
+            return 1./n
+        else:
+            return large
+
+    for i in xrange(K):
+        edges.append( ('O', i, weight( nij[i,i])))
+        for j in xrange(i+1, K):
+            edges.append( (i, j, weight(nij[i,j])))
+    edges = list(nx.k_edge_augmentation( G, k=connectivity, partial=True))
+    
+    only_include_measurements = set([])
+    for i, j in edges:
+        if 'O'==i:
+            only_include_measurements.add( (j,j))
+        elif 'O'==j:
+            only_include_measurements.add( (i,i))
+        else:
+            if i<j:
+                only_include_measurements.add( (i,j))
+            else:
+                only_include_measurements.add( (j,i))
+    
+    nij = update_A_optimal( sij, nsofar, nadd, only_include_measurements)
+
+    return nij
 
 def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     '''
@@ -776,6 +919,51 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
         success2 = False
 
     return success1 and success2
+
+def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
+    '''
+    '''
+    sij = matrix( sij)
+    K = sij.size[0]
+    nsofar = np.zeros( (K, K))
+    nadd = 1.
+
+    nopt = A_optimize( sij)
+    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, K)
+    
+    success = True
+
+    deltan = sum_upper_triangle( abs(nopt - nij))/(0.5*K*(K+1))
+    if deltan > tol:
+        print 'FAIL: sparse optimization disagree with dense optimzation.'
+        print '| n - nopt | = %g > %g' % (deltan, tol)
+        success = False
+    else:
+        print 'SUCCESS: sparse optimization agrees with dense optimization.'
+        print '| n - nopt | = %g <= %g' % (deltan, tol)
+
+    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, 2)
+    trC = np.trace( covariance( sij, nij))
+
+    dtr = np.zeros( ntimes)
+    for t in xrange( ntimes):
+        zeta = matrix( 1. + 2*delta*(np.random.rand(  K, K) - 0.5))
+        nijp = cvxopt.mul( nij, zeta)
+        nijp = 0.5*(nijp + nijp.trans()) # Symmetrize
+        s = sum_upper_triangle( nijp)
+        nijp *= nadd/s
+        
+        trCp = np.trace( covariance( sij, nijp))
+        dtr[t] = trCp - trC
+    
+    success2 = np.all( dtr >= 0)
+    if not success2:
+        print 'FAIL: sparse optimization fail to minimize.'
+        print dtr
+    else:
+        print 'SUCCESS: sparse optimization minimizes.'
+
+    return success and success2
 
 def check_hessian( dF, d2F, x0):
     '''
@@ -916,5 +1104,9 @@ def unitTest( tol=1.e-4):
     if success:
         print 'Iterative update of A-optimal passed!'
     
+    # Check sparse A-optimal
+    if (check_sparse_A_optimal( sij)):
+        print 'Sparse A-optimal passed!'
+
 if __name__ == '__main__':
     unitTest()

@@ -3,7 +3,6 @@ import networkx as nx
 from cvxopt import matrix
 
 import sys
-import diffnet as dn
 
 def diffnet_to_graph( A, origins='O'):
     '''
@@ -96,44 +95,6 @@ def draw_diffnet_graph( g, pos=None, ax=None,
                             ax=ax)
     return mypos
 
-def MST_optimize( sij, allocation='std'):
-    '''
-    Measure the differences through a minimum spanning tree.
-
-    Args:
-    sij: KxK symmetric matrix, where the measurement variance of the
-    difference between i and j is proportional to s[i][j]^2 =
-    s[j][i]^2, and the measurement variance of i is proportional to
-    s[i][i]^2.
-
-    allocation: string - can be 'std', 'var', or 'n'. 
-    if 'std', allocate n_{ij} \propto s_{ij},
-    if 'var', allocate n_{ij} \propto s_{ij}^2
-    if 'n', allocate n_{ij} = const
-    n_{ij} = 0 for all (i,j) that are not part of the minimum spanning tree.
-
-    Return:
-    n: KxK symmetric matrix, where n[i][j] is the fraction of measurements
-    to be performed for the difference between i and j, satisfying  
-    \sum_i n[i][i] + \sum_{i<j} n[i][j] = 1.
-    '''
-    K = sij.size[0]
-    G = diffnet_to_graph( sij)
-    T = nx.minimum_spanning_tree( G)
-    n = matrix( 0., (K, K))
-    for i, j, data in T.edges( data=True):
-        weight = data['weight']
-        if allocation == 'var':
-            weight *= weight
-        elif allocation == 'n':
-            weight = 1.
-        if i=='O':
-            n[j,j] = weight
-        elif j=='O':
-            n[i,i] = weight
-        else:
-            n[i,j] = n[j,i] = weight
-    s = dn.sum_upper_triangle( n)
-    n *= (1./s)  # So that \sum_{i<=j} n_{ij} = 1
-    return n
     
+    
+
