@@ -756,7 +756,7 @@ def MST_optimize( sij, allocation='std'):
     n *= (1./s)  # So that \sum_{i<=j} n_{ij} = 1
     return n
 
-def sparse_A_optimal_network( sij, nsofar, nadd, max_measure, connectivity=2):
+def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2):
     '''
     Construct a sparse A-optimal network, so that (approximately) only
     max_measure different measurements will receive resource
@@ -772,9 +772,10 @@ def sparse_A_optimal_network( sij, nsofar, nadd, max_measure, connectivity=2):
     that has already been collected for (i,j) pair.
     nadd: float, nadd gives the additional number of samples to be collected in
     the next iteration.
-    max_measure: int, the number of measurements to receive allocations.  
+    n_measure: int, the number of measurements to receive allocations.  
     The actual number of measurements with non-zero allocation might exceed
-    this number in order to guarantee the connectivity.
+    this number in order to guarantee the connectivity. If it is zero, the
+    number of measurements will be determined by the connectivity requirement.
     connectivity: int, ensure that the resulting difference network is k-edge
     connected.
 
@@ -810,6 +811,7 @@ def sparse_A_optimal_network( sij, nsofar, nadd, max_measure, connectivity=2):
             edges.append( (i, j, weight(nij[i,j])))
     edges = list(nx.k_edge_augmentation( G, k=connectivity, partial=True))
     
+    # Include only the edges that guarantee k-connectivity and nothing else 
     only_include_measurements = set([])
     for i, j in edges:
         if 'O'==i:
@@ -821,6 +823,22 @@ def sparse_A_optimal_network( sij, nsofar, nadd, max_measure, connectivity=2):
                 only_include_measurements.add( (i,j))
             else:
                 only_include_measurements.add( (j,i))
+    
+    # If there is additional allowance for the number of measurements,
+    # add the remaining ones with the largest allocations from the dense
+    # network.
+    if (len(only_include_measurements) < n_measure):
+        indices = []
+        for i in xrange(K):
+            for j in xrange(i, K):
+                if (i,j) in only_include_measurements:
+                    continue
+                heapq.heappush( indices, (-nij[i,j], (i,j)))
+        addition = []
+        for m in xrange(n_measure - len(only_include_measurements)):
+            _n, (i,j) = heapq.heappop( indices)
+            addition.append( (i,j))
+        only_include_measurements.update( addition)
     
     nij = update_A_optimal( sij, nsofar, nadd, only_include_measurements)
 
@@ -942,7 +960,10 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
         print 'SUCCESS: sparse optimization agrees with dense optimization.'
         print '| n - nopt | = %g <= %g' % (deltan, tol)
 
-    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, 2)
+    n_measures = 8
+    connectivity = 2
+    nij = sparse_A_optimal_network( sij, nsofar, nadd, n_measures, connectivity)
+    print nij
     trC = np.trace( covariance( sij, nij))
 
     dtr = np.zeros( ntimes)

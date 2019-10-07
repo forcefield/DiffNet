@@ -192,6 +192,27 @@ def benchmark_random_net( K=30, sii_offset=0., sij_min=1., sij_max=5.,
 
     return benchmark_diffnet( sij_generator, ntimes)
 
+def benchmark_sparse_net( K=30, measure_per=5, connectivity=3, 
+                          sii_offset=0., sij_min=1., sij_max=5.,
+                          ntimes=100):
+    nsofar = np.zeros( (K, K))
+    nadd = 1
+    ratio = np.zeros( ntimes)
+    n_measure = measure_per*K
+    ncutoff = 1./(20.*n_measure)
+    for t in xrange( ntimes):
+        sij = random_net_sij_generator( K, sii_offset, sij_min, sij_max)
+        nij = A_optimize( sij)
+        trC = np.trace( covariance( sij, nij))
+        nijp = sparse_A_optimal_network( sij, nsofar, nadd, n_measure, connectivity)
+        nijp = np.asarray( nijp)
+        nijp[nijp < ncutoff] = 0
+        nijp = matrix( nijp)
+        trCp = np.trace( covariance( sij, nijp))
+        ratio[t] = trCp/trC
+        
+    return np.mean(ratio), np.std(ratio)
+
 def analyze_uniform_net( pmax=6, dmax=25., Nd=20):
     
     d = np.linspace( 0., dmax, Nd)
@@ -267,6 +288,12 @@ def opts():
                          help='Name of pickle file to write analysis results for uniform net.')
     parser.add_argument( '--out-E-tree-timings', default=None,
                          help='Name of pickle file to write benchmark of E-tree and E-optimal timings.')
+    parser.add_argument( '--out-sparse-net', action='store_true', default=False,
+                         help='Benchmark of sparse A-optimal efficiency.')
+    parser.add_argument( '--connectivity', type=int, default=2,
+                        help='Connectivity requirement for sparse network.')
+    parser.add_argument( '--measure-per-quantity', type=int, default=3,
+                         help='Have at least this many measurements per quantity.')
     return parser
 
 def write_average( avg):
@@ -304,6 +331,10 @@ def main( args):
         timings, dn = benchmark_E_tree( args.num_points, args.num_times)
         print 'timings(E)/timings(E-tree) = %.2f' % np.mean(timings['E']/timings['Etree'])
         print '|dn| = %g' % dn
+    if args.out_sparse_net is not None:
+        print 'Benchmarking sparse A-optimal network...'
+        results = benchmark_sparse_net( args.num_points, args.measure_per_quantity, args.connectivity, args.sii_offset, args.sij_min, args.sij_max, args.num_times)
+        print 'mean ratio: %.3f +/- %.3f' % results
 
 if __name__ == '__main__':
     main( opts().parse_args())
