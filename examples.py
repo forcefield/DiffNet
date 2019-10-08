@@ -192,14 +192,14 @@ def benchmark_random_net( K=30, sii_offset=0., sij_min=1., sij_max=5.,
 
     return benchmark_diffnet( sij_generator, ntimes)
 
-def benchmark_sparse_net( K=30, measure_per=5, connectivity=3, 
+def benchmark_sparse_net( K=30, measure_per=3, connectivity=3, 
                           sii_offset=0., sij_min=1., sij_max=5.,
                           ntimes=100):
     nsofar = np.zeros( (K, K))
     nadd = 1
     ratio = np.zeros( ntimes)
-    n_measure = measure_per*K
-    ncutoff = 1./(20.*n_measure)
+    n_measure = int(measure_per*K)
+    ncutoff = 1./(10.*n_measure)
     for t in xrange( ntimes):
         sij = random_net_sij_generator( K, sii_offset, sij_min, sij_max)
         nij = A_optimize( sij)
@@ -292,7 +292,7 @@ def opts():
                          help='Benchmark of sparse A-optimal efficiency.')
     parser.add_argument( '--connectivity', type=int, default=2,
                         help='Connectivity requirement for sparse network.')
-    parser.add_argument( '--measure-per-quantity', type=int, default=3,
+    parser.add_argument( '--measure-per-quantity', type=float, default=3,
                          help='Have at least this many measurements per quantity.')
     return parser
 

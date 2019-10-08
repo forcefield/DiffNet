@@ -756,7 +756,8 @@ def MST_optimize( sij, allocation='std'):
     n *= (1./s)  # So that \sum_{i<=j} n_{ij} = 1
     return n
 
-def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2):
+def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2,
+                              sparse_by_fluctuation=True):
     '''
     Construct a sparse A-optimal network, so that (approximately) only
     max_measure different measurements will receive resource
@@ -778,7 +779,9 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2):
     number of measurements will be determined by the connectivity requirement.
     connectivity: int, ensure that the resulting difference network is k-edge
     connected.
-
+    sparse_by_fluctuation: bool, if True, generate the sparse network by 
+    minimizing \sum_e s_e in the k-connected spanning subgraph.
+    
     Return:
 
     KxK symmetric matrix of float, the (i,j) element of which gives the
@@ -788,27 +791,31 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2):
     '''
     K = sij.size[0]
 
-    # First, get the dense optimal network
-    nij = update_A_optimal( sij, nsofar, nadd)
-    
+    if not sparse_by_fluctuation:
+        # First, get the dense optimal network
+        nij = update_A_optimal( sij, nsofar, nadd)
+        def weight( i, j, epsilon=1e-10):
+            n = nij[i,j]
+            large = 1/epsilon
+            if n > epsilon:
+                return 1./n
+            else:
+                return large
+    else:
+        def weight( i,j):
+            return sij[i,j]
+
     # Next, get the k-connected graph that approximately minimizes the 
     # sum of 1/n_{ij}.
     G = nx.Graph()
     G.add_nodes_from( range( K))
     G.add_node( 'O')
     edges = []
-
-    def weight( n, epsilon=1e-10):
-        large = 1/epsilon
-        if n > epsilon:
-            return 1./n
-        else:
-            return large
-
+    
     for i in xrange(K):
-        edges.append( ('O', i, weight( nij[i,i])))
+        edges.append( ('O', i, weight( i,i)))
         for j in xrange(i+1, K):
-            edges.append( (i, j, weight(nij[i,j])))
+            edges.append( (i, j, weight(i,j)))
     edges = list(nx.k_edge_augmentation( G, k=connectivity, partial=True))
     
     # Include only the edges that guarantee k-connectivity and nothing else 
@@ -833,10 +840,10 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2):
             for j in xrange(i, K):
                 if (i,j) in only_include_measurements:
                     continue
-                heapq.heappush( indices, (-nij[i,j], (i,j)))
+                heapq.heappush( indices, (weight(i,j), (i,j)))
         addition = []
         for m in xrange(n_measure - len(only_include_measurements)):
-            _n, (i,j) = heapq.heappop( indices)
+            _w, (i,j) = heapq.heappop( indices)
             addition.append( (i,j))
         only_include_measurements.update( addition)
     
@@ -947,7 +954,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
     nadd = 1.
 
     nopt = A_optimize( sij)
-    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, K)
+    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, K, False)
     
     success = True
 
@@ -962,7 +969,8 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
 
     n_measures = 8
     connectivity = 2
-    nij = sparse_A_optimal_network( sij, nsofar, nadd, n_measures, connectivity)
+    nij = sparse_A_optimal_network( sij, nsofar, nadd, n_measures, connectivity,
+                                    True)
     print nij
     trC = np.trace( covariance( sij, nij))
 
