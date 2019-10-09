@@ -414,6 +414,55 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
 
     return dn
 
+def constant_relative_error( si):
+    '''
+    Construct a difference network with constant relative error, such that 
+    s_{ij} = s_i - s_j, from the given $s_i$.
+
+    Return:
+
+    sij = s_i - s_j
+    '''
+    K = len(si)
+    si = np.sort( si)
+    sij = np.diag( si)
+    for i in xrange( K):
+        for j in xrange( i+1, K):
+            sij[i,j] = sij[j,i] = si[j] - si[i]
+    return matrix( sij)
+
+def A_optimize_const_relative_error( si):
+    '''
+    Find the A-optimal of the difference network where s_{ij} = |s_i - s_j|.
+    '''
+    K = len(si)
+    si = np.sort( si)
+
+    nij = np.zeros( (K, K), dtype=float)
+    N = nij[0,0] = np.sqrt( K)*si[0]
+    for i in xrange(K-1):
+        nij[i+1, i] = nij[i, i+1] = np.sqrt(K - (i+1))*(si[i+1] - si[i])
+        N += nij[i, i+1]
+    
+    nij = matrix( nij/N)
+    assert( abs(sum_upper_triangle( nij) - 1) < 1e-10)
+    return nij
+
+def D_optimize_const_relative_error( si):
+    '''
+    Find the D-optimal of the difference network where s_{ij} = |s_i - s_j|.
+    '''
+    K = len(si)
+    si = np.sort( si)
+
+    iK = 1./K
+    nij = np.zeros( (K, K), dtype=float)
+    nij[0,0] = iK
+    for i in xrange(K-1):
+        nij[i,i+1] = nij[i+1,i] = iK
+
+    return matrix( nij)
+        
 def E_optimize( sij):
     '''
     Find the E-optimal of the difference network that minimizes the largest 

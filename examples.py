@@ -70,12 +70,13 @@ def const_allocation( sij, allocation='std'):
         nij = sij[:,:]
     else:
         nij = matrix( 1., sij.size)
-    s = dn.sum_upper_triangle( nij)
+    s = sum_upper_triangle( nij)
     nij /= s
     return nij
     
 def benchmark_diffnet( sij_generator, ntimes=100,
                        optimalities = ['D', 'A', 'Etree'],
+                       constant_relative_error=False,
                        epsilon=1e-2):
     '''
     For each optimality, compute the reduction of covariance
@@ -117,9 +118,20 @@ def benchmark_diffnet( sij_generator, ntimes=100,
                         [], [] ]) for o in optimalities ])
     nfails = 0
     for t in xrange( ntimes):
-        sij = sij_generator()
+        if constant_relative_error:
+            results = dict()
+            si, sij = sij_generator()
+            for o in optimalities:
+                if o=='A':
+                    results[o] = A_optimize_const_relative_error( si)
+                elif o=='D':
+                    results[o] = D_optimize_const_relative_error( si)
+                else:
+                    results.update( optimize( sij, [o]))
+        else:
+            sij = sij_generator()
+            results = optimize( sij, optimalities)
         ssum = np.sum( np.triu( sij))
-        results = dn.optimize( sij, optimalities)
         if None in results.values(): 
             nfails += 1
             continue
@@ -147,13 +159,13 @@ def benchmark_diffnet( sij_generator, ntimes=100,
             cstn = const_allocation( sij, 'n'),
             csts = const_allocation( sij, 'std'),
             cstv = const_allocation( sij, 'var')))
-        CMSTn = dn.covariance( sij, results['MSTn'])
+        CMSTn = covariance( sij, results['MSTn'])
         DMSTn = np.log(linalg.det( CMSTn))
         AMSTn = np.trace( CMSTn)
         EMSTn = np.max(linalg.eig( CMSTn)[0]).real
         for o in results:
             n = results[o]
-            C = dn.covariance( sij, n)
+            C = covariance( sij, n)
             D = np.log(linalg.det( C))
             A = np.trace( C)
             E = np.max(linalg.eig( C)[0]).real
@@ -173,11 +185,20 @@ def benchmark_diffnet( sij_generator, ntimes=100,
         topo[o][1] /= (ntimes - nfails)
     return stats, avg, topo
 
-def benchmark_distance_net( K=30, rmin=0.2, ntimes=100):
+def benchmark_distance_net( K=30, rmin=0.2, dim=2, ntimes=100):
     def sij_generator():
-        return distance_net( K, dim=2, rmin=rmin)[0]
+        return distance_net( K, dim, rmin=rmin)[0]
 
     return benchmark_diffnet( sij_generator, ntimes)
+
+def benchmark_const_rel_net( K=30, ntimes=100):
+    def sij_generator():
+        si = np.random.rand( K)
+        si = np.sort( si)
+        sij = constant_relative_error( si)
+        return si, sij
+
+    return benchmark_diffnet( sij_generator, ntimes, constant_relative_error=True)
 
 def random_net_sij_generator( K=30, sii_offset=0., sij_min=1., sij_max=5.):
     sij = matrix( (sij_max-sij_min)*np.random.rand(K, K)+sij_min, (K, K))
@@ -234,7 +255,7 @@ def analyze_uniform_net( pmax=6, dmax=25., Nd=20):
             sij = np.ones( (K,K), dtype=float)
             sij += np.diag( offset_origin*np.ones( K))
             sij = matrix( sij)
-            results = dn.optimize( sij, ['A'])
+            results = optimize( sij, ['A'])
             nij = results['A']
             ndiag = np.diag( nij)
             stats['diag'][p-1,j] = np.mean( ndiag)
@@ -276,6 +297,8 @@ def opts():
                          help='Number of times to run the benchmark to collect statistics.')
     parser.add_argument( '--out-distance-net', default=None,
                          help='Name of pickle file to write benchmark results for distance net.')
+    parser.add_argument( '--out-const-rel-net', default=None,
+                         help='Name of pickle file to write benchmark results for constant relative error net.')
     parser.add_argument( '--out-random-net', default=None,
                          help='Name of pickle file to write benchmark results for random net.')
     parser.add_argument( '--sii-offset', type=float, default=0.,
@@ -322,6 +345,12 @@ def main( args):
         pickle.dump( dict(stats=stats, topo=topo), 
                      file( args.out_random_net, 'wb'))
         write_average( avg)
+    if args.out_const_rel_net is not None:
+        print 'Benchmarking diffnet with constant relative errors...'
+        stats, avg, topo = benchmark_const_rel_net( args.num_points, ntimes=args.num_times)
+        pickle.dump( dict(stats=stats, topo=topo),
+                     file( args.out_const_rel_net, 'wb'))
+        write_average( avg)
     if args.out_uniform_net is not None:
         print 'Analyzing diffnet for uniform nets...'
         results = analyze_uniform_net()
@@ -331,7 +360,7 @@ def main( args):
         timings, dn = benchmark_E_tree( args.num_points, args.num_times)
         print 'timings(E)/timings(E-tree) = %.2f' % np.mean(timings['E']/timings['Etree'])
         print '|dn| = %g' % dn
-    if args.out_sparse_net is not None:
+    if args.out_sparse_net:
         print 'Benchmarking sparse A-optimal network...'
         results = benchmark_sparse_net( args.num_points, args.measure_per_quantity, args.connectivity, args.sii_offset, args.sij_min, args.sij_max, args.num_times)
         print 'mean ratio: %.3f +/- %.3f' % results
