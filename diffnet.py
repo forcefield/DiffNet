@@ -60,6 +60,7 @@ def sum_upper_triangle( x):
     '''
     Return the sum of the upper triangle elements of the square matrix x.
     '''
+    if not isinstance(x, matrix): x = matrix( x)
     s = 0.
     for i in xrange( x.size[0]):
         for j in xrange( i, x.size[1]):
@@ -111,6 +112,7 @@ def lndetC( sij, x, hessian=False):
     tuple (f, d/dx f) if hessian is false
     tuple (f, d/dx f, d^2/dx^2 f) if hessian is true.
     '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
     K = sij.size[0]
     M = K*(K+1)/2
     F = matrix( 0., (K, K))
@@ -183,6 +185,7 @@ def D_optimize( sij):
     Convex Optimization (http://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
     and http://cvxopt.org/userguide/solvers.html#problems-with-nonlinear-objectives.
     '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
     assert( sij.size[0]==sij.size[1])
     K = sij.size[0]
     M = K*(K+1)/2
@@ -233,6 +236,7 @@ def A_optimize( sij):
     Convex Optimization (http://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
     and https://cvxopt.org/userguide/coneprog.html#semidefinite-programming
     '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
     # We solve the dual problem, which can be cast as a semidefinite
     # programming (SDP) problem.
     assert( sij.size[0] == sij.size[1])
@@ -326,6 +330,7 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
     number of samples to be allocated to the measurement of (i,j) difference
     in the next iteration.
     '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
     assert( sij.size[0] == sij.size[1])
     K = sij.size[0]
     if only_include_measurements is None:
@@ -488,6 +493,7 @@ def E_optimize( sij):
     '''
     # We solve the dual problem, which can be cast as a semidefinite
     # programming (SDP) problem.
+    if not isinstance( sij, matrix): sij = matrix( sij)
     assert( sij.size[0] == sij.size[1])
     K = sij.size[0]
     M = K*(K+1)/2
@@ -575,6 +581,7 @@ def E_optimal_tree( sij):
     to be performed for the difference between i and j, satisfying  
     \sum_i n[i][i] + \sum_{i<j} n[i][j] = 1.
     '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
     # a[i] = \sum_{e\elem E_i s_e}, where E_i is the shortest path
     # from origin to i.  prev[i] is the node preceding i in E_i.
     K = sij.size[0]
@@ -657,14 +664,15 @@ def MLestimate( xij, invsij2, x0=None):
 
     Args:
 
-    xij: KxK matrix, where xij[i][j] = xi - xj is the measured difference 
-    between xi and xj for j!=i, and xij[i][i] = xi is the measured value
-    of xi.  If a measurement is absent, the corresponding xij element can 
-    be an arbitrary real number.
+    xij: KxK antisymmetricmatrix, where xij[i][j] = xi - xj is the
+    measured difference between xi and xj for j!=i, and xij[i][i] = xi
+    is the measured value of xi.  If a measurement is absent, the
+    corresponding xij element can be an arbitrary real number.
 
-    invsij2: KxK matrix, where invsij2[i][j] = 1/\sigma_{ij}^2 is the inverse
-    of the statistical variance for measurement xij[i][j].  If a measurement
-    is absent, the corresponding invsij2 element should be set to 0 (as the
+    invsij2: KxK symmetric matrix, where invsij2[i][j] =
+    1/\sigma_{ij}^2 is the inverse of the statistical variance for
+    measurement xij[i][j].  If a measurement is absent, the
+    corresponding invsij2 element should be set to 0 (as the
     statistical variance of the measurement is infinity).
 
     x0: K-element array, where x0[i] is the input a priori value of the i'th
@@ -693,6 +701,7 @@ def MLestimate( xij, invsij2, x0=None):
     assert( rank + v.shape[1] == xij.shape[0])
 
     if (v.shape[1]==0 or x0 is None): return x, v
+    if type(x0)==list: x0 = np.array( x0)
     # Find l so as to minimize
     # \sum_j (x_j + l_a v_{ja} - x_{0j})^2
     dx = (x0[x0!=None].astype(float) - x[x0!=None])

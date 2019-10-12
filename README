@@ -20,7 +20,69 @@ If you use DiffNet in a published work, please cite
 
 Huafeng Xu, Optimal measurement network of pairwise differences, 2019, https://arxiv.org/abs/1906.08599.
 
+The following outlines an example application of the DiffNet: the
+calculation of binding free energies of a set of molecules from
+relative binding free energy calculations.  (Underscored function
+names __func__ indicate user-defined external functions.)
 
+import numpy as np
+from diffnet import *
+
+mols = __get_set_of_molecules__(...) # load up the molecules
+nmols = len(mols)
+
+# Optionally, experimental values for reference molecules may be 
+# incorporated
+if __experimental_values__:
+    dgexp = np.array( [ None ]*nmols)     
+    for i, dg in __experimental_values__:
+        dgexp[i] = dg
+else: 
+    dgexp = None
+
+nsofar = np.zeros( (nmols, nmols))
+# Initialize s_{ij} with random numbers
+sij = np.random.rand( nmols, nmols)
+sij = 0.5*(sij + sij.T)  # symmetrize the fluctuation matrix
+converged = False
+while not converged:
+    # Update the A-optimal difference network given the current estimate of sij
+    # the numbers of samples so far, and the total number of samples for
+    # the next iteration
+    nij = update_A_optimal(sij, nsofar, ndelta)
+    # nij = A_optimal( sij)  # call this if not using iterative optimization.
+    nij[nij < ncut] = 0  # Omit pairwise allocations too small to be practical.
+    nij = round_to_integers( nij)
+    for i in xrange(nmols):
+        for j in xrange(i+1, nmols):
+            if nij[i,j] == 0: continue        
+            # Compute the relative free energy between i and j,
+            # using nij[i,j] number of samples.
+            __relative_free_energy__(nsamples=nij[i,j], mols[i], mols[j], 
+                                     ...)
+    nsofar += nij
+    # Get ALL the past free energy results once the calculations are done
+    fe_results = __get_free_energy_results__(...)
+    dgij = np.zeros( (nmols, nmols))
+    invsij2 = np.zeros( (nmols, nmols))
+    # Loop over pairs (i, j) between which the free energy have been 
+    # computed in the past.
+    for i, j, dg, var in fe_results:
+        # Update the s_{ij} estimate from the calculated variance.    
+        # \sigma_e = s_e/\sqrt(n_e) => s_e = \sigma_e \sqrt(n_e)
+        sij[i,j] = sij[j,i] = np.sqrt( var*nsofar[i,j]) 
+        invsij2[i,j] = invsij2[j,i] = 1./var
+        dgij[i,j] = dg
+        dgij[j,i] = -dg
+
+    # Use Maximum-likelihood estimator to derive the individual free energies
+    # from the pairwise differences and their variances.
+    dgi, vec = MLestimate( dgij, invsij2, dgexp)
+    covar = covariance( sij, nsofar)
+    
+    converged = __check_convergence__(...)
+
+__report_free_energy__( dgi, covar, ...)
 
 
 
