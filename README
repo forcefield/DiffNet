@@ -26,7 +26,9 @@ relative binding free energy calculations.  (Underscored function
 names __func__ indicate user-defined external functions.)
 
 import numpy as np
-from diffnet import *
+from diffnet import A_optimize, update_A_optimal
+from diffnet import round_to_integers
+from diffnet import MLestimate, covariance
 
 mols = __get_set_of_molecules__(...) # load up the molecules
 nmols = len(mols)
