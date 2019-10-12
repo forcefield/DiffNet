@@ -52,7 +52,7 @@ while not converged:
     # the numbers of samples so far, and the total number of samples for
     # the next iteration
     nij = update_A_optimal(sij, nsofar, ndelta)
-    # nij = A_optimal( sij)  # call this if not using iterative optimization.
+    # nij = A_optimize( sij)  # call this if not using iterative optimization.
     nij[nij < ncut] = 0  # Omit pairwise allocations too small to be practical.
     nij = round_to_integers( nij)
     for i in xrange(nmols):
