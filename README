@@ -22,8 +22,9 @@ Huafeng Xu, Optimal measurement network of pairwise differences, 2019, https://a
 
 The following outlines an example application of the DiffNet: the
 calculation of binding free energies of a set of molecules from
-relative binding free energy calculations.  (Underscored function
-names __func__ indicate user-defined external functions.)
+individual (a.k.a. absolute) and relative binding free energy
+calculations.  (Underscored function names __func__ indicate
+user-defined external functions.)
 
 import numpy as np
 from diffnet import A_optimize, update_A_optimal
@@ -53,14 +54,16 @@ while not converged:
     # the next iteration
     nij = update_A_optimal(sij, nsofar, ndelta)
     # nij = A_optimize( sij)  # call this if not using iterative optimization.
-    nij[nij < ncut] = 0  # Omit pairwise allocations too small to be practical.
+    # nij[nij < ncut] = 0  # Omit pairs with impractically small allocations.
     nij = round_to_integers( nij)
     for i in xrange(nmols):
+        if nij[i,i] > 0:
+            __individual_free_energy__( mols[i], nsamples=nij[i,i], ...)
         for j in xrange(i+1, nmols):
             if nij[i,j] == 0: continue        
             # Compute the relative free energy between i and j,
             # using nij[i,j] number of samples.
-            __relative_free_energy__(nsamples=nij[i,j], mols[i], mols[j], 
+            __relative_free_energy__(mols[i], mols[j], nsamples=nij[i,j], 
                                      ...)
     nsofar += nij
     # Get ALL the past free energy results once the calculations are done
@@ -75,7 +78,7 @@ while not converged:
         sij[i,j] = sij[j,i] = np.sqrt( var*nsofar[i,j]) 
         invsij2[i,j] = invsij2[j,i] = 1./var
         dgij[i,j] = dg
-        dgij[j,i] = -dg
+        if (i!=j): dgij[j,i] = -dg
 
     # Use Maximum-likelihood estimator to derive the individual free energies
     # from the pairwise differences and their variances.
