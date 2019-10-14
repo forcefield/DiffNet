@@ -696,8 +696,9 @@ def MLestimate( xij, invsij2, x0=None):
     Fd = np.diag( np.sum( invsij2, axis=1))
     # F[i][j] = -\sigma_{ij}^{-2} for i\neq j
     F = -invsij2 + np.diag( np.diag( invsij2)) + Fd
-    x, residuals, rank, sv = linalg.lstsq( F, z)
-    v = null_space( F)
+    rcond = np.finfo(F.dtype).eps * max(xij.shape[0], xij.shape[1])
+    x, residuals, rank, sv = linalg.lstsq( F, z, rcond)
+    v = null_space( F, rcond)
     assert( rank + v.shape[1] == xij.shape[0])
 
     if (v.shape[1]==0 or x0 is None): return x, v
