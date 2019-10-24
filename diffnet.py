@@ -21,7 +21,7 @@ Cite https://arxiv.org/abs/1906.08599 if you use this in a publication.
 import numpy as np
 from scipy import linalg
 import cvxopt 
-from cvxopt import matrix
+from cvxopt import matrix, spmatrix
 import heapq
 import networkx as nx
 
@@ -264,37 +264,49 @@ def A_optimize( sij):
     # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
     # column-major vector representing the KxK matrix of U_m augmented
     # by a length K vector, hence the dimension (K+1)x(K+1).
-    Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    G0 = []
     hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
     
     for i in xrange( K):
         # The index of matrix element (i,i) in column-major representation
         # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
-        Gs[0][i*(K+2), i] = 1./(sij[i,i]*sij[i,i])
+        # Gs[0][i*(K+2), i] = 1./(sij[i,i]*sij[i,i])
+        G0.append( (i*(K+2), i, -1./(sij[i,i]*sij[i,i])))
         for j in xrange( i+1, K):
             m = measurement_index( i, j, K)
             # The index of matrix element (i,j) in column-major representation
             # of a (K+1)x(K+1) matrix is j*(K+1) + i
             v2 = 1./(sij[i,j]*sij[i,j])
-            Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
-            Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
-
-    # G.(x, u) + e >=0 <=> -G.(x, u) <= e
-    Gs[0] *= -1.
-
+            # Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            G0.append( (j*(K+1) + i, m, v2))
+            G0.append( (i*(K+1) + j, m, v2))
+            # Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            G0.append( (i*(K+2), m, -v2))
+            G0.append( (j*(K+2), m, -v2))
+            
+    # G.(x, u) + h >=0 <=> -G.(x, u) <= h
+    # Gs[0] *= -1.
+    
+    Gs = []
     for k in xrange( K):
-        if (k>0): Gs[k][:,:M] = Gs[0][:,:M]
+        # if (k>0): Gs[k][:,:M] = Gs[0][:,:M]
         # for the term u_k [ [0, 0], [0, 1] ]
-        Gs[k][-1, M+k] = -1.
-        
+        # Gs[k][-1, M+k] = -1.
+        I = [ i for i, j, x in G0 ] + [ (K+1)*(K+1) - 1 ]
+        J = [ j for i, j, x in G0 ] + [ M + k ]
+        X = [ x for i, j, x in G0 ] + [ -1. ]
+        Gs.append( spmatrix(X, I, J, ((K+1)*(K+1), M+K)))
         hs[k][k,-1] = hs[k][-1,k] = 1.
 
     # The constraint n >= 0, as G0.x <= h0
-    G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    # G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    G0 = spmatrix( -np.ones( M), range( M), range( M), (M+K, M+K))
     h0 = matrix( np.zeros( M + K))
 
     # The constraint \sum_m n_m = 1.
-    A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    # A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    A = spmatrix( np.ones( M), np.zeros( M, dtype=int), range( M), (1, M+K))
     b = matrix( 1., (1, 1) )
     
     sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
@@ -302,7 +314,7 @@ def A_optimize( sij):
 
     return n
 
-def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
+def update_A_optimal( sij, nadd, nsofar, only_include_measurements=None):
     '''
     In an iterative optimization of the difference network, the
     optimal allocation is updated with the estimate of s_{ij}, and we
@@ -315,10 +327,10 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
     difference between i and j is proportional to s[i][j]^2 =
     s[j][i]^2, and the measurement variance of i is proportional to
     s[i][i]^2.
+    nadd: float, Nadd gives the additional number of samples to be collected in
+    the next iteration.
     nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
     that has already been collected for (i,j) pair.
-    nadd: int, Nadd gives the additional number of samples to be collected in
-    the next iteration.
     only_include_measurements: set of pairs, if not None, indicate which 
     pairs should be considered in the optimal network.  Any pair (i,j) not in 
     the set will be excluded in the allocation (i.e. dn[i,j] = 0).  The pair
@@ -364,7 +376,8 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
     # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
     # column-major vector representing the KxK matrix of U_m augmented
     # by a length K vector, hence the dimension (K+1)x(K+1).
-    Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    G0 = []
     hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
     
     for i in xrange( K):
@@ -374,9 +387,11 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
         if (only_include_measurements is not None):
             m = measure_indices.get( (i,i), None)
             if m is not None:
-                Gs[0][i*(K+2), m] = v2
+                # Gs[0][i*(K+2), m] = v2
+                G0.append( (i*(K+2), m, -v2))
         else:
-            Gs[0][i*(K+2), i] = v2
+            # Gs[0][i*(K+2), i] = v2
+            G0.append( (i*(K+2), i, -v2))
         hs[0][i,i] += nsofar[i,i]*v2
         for j in xrange( i+1, K):
             # The index of matrix element (i,j) in column-major representation
@@ -391,27 +406,37 @@ def update_A_optimal( sij, nsofar, nadd, only_include_measurements=None):
                 if m is None: continue
             else:        
                 m = measurement_index( i, j, K)
-            Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
-            Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            # Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            G0.append( (j*(K+1) + i, m, v2))
+            G0.append( (i*(K+1) + j, m, v2))
+            # Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            G0.append( (i*(K+2), m, -v2))
+            G0.append( (j*(K+2), m, -v2))
 
-    # G.(x, u) + e >=0 <=> -G.(x, u) <= e
-    Gs[0] *= -1.
+    # G.(x, u) + h >=0 <=> -G.(x, u) <= h
+    # Gs[0] *= -1.
 
+    Gs = []
     for k in xrange( K):
         if (k>0): 
-            Gs[k][:,:M] = Gs[0][:,:M]
+            # Gs[k][:,:M] = Gs[0][:,:M]
             hs[k][:K,:K] = hs[0][:K,:K]
         # for the term u_k [ [0, 0], [0, 1] ]
-        Gs[k][-1, M+k] = -1.
-        
+        # Gs[k][-1, M+k] = -1.
+        I = [ i for i, j, x in G0 ] + [ (K+1)*(K+1) - 1 ]
+        J = [ j for i, j, x in G0 ] + [ M + k ]
+        X = [ x for i, j, x in G0 ] + [ -1. ]
+        Gs.append( spmatrix(X, I, J, ((K+1)*(K+1), M+K)))
         hs[k][k,-1] = hs[k][-1,k] = 1.
 
     # The constraint dn >= 0, as G0.x <= h0
-    G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    # G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    G0 = spmatrix( -np.ones( M), range(M), range(M), (M+K, M+K))
     h0 = matrix( np.zeros( M + K))
 
     # The constraint \sum_m dn_m = nadd.
-    A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    # A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    A = spmatrix( np.ones( M), np.zeros( M, dtype=int), range( M), (1, M+K))
     b = matrix( float(nadd), (1, 1) )
     
     sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
@@ -814,7 +839,8 @@ def MST_optimize( sij, allocation='std'):
     n *= (1./s)  # So that \sum_{i<=j} n_{ij} = 1
     return n
 
-def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2,
+def sparse_A_optimal_network( sij, nadd=1., nsofar=None, 
+                              n_measure=0, connectivity=2,
                               sparse_by_fluctuation=True):
     '''
     Construct a sparse A-optimal network, so that (approximately) only
@@ -827,10 +853,10 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2,
     difference between i and j is proportional to s[i][j]^2 =
     s[j][i]^2, and the measurement variance of i is proportional to
     s[i][i]^2.
-    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
-    that has already been collected for (i,j) pair.
     nadd: float, nadd gives the additional number of samples to be collected in
     the next iteration.
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
     n_measure: int, the number of measurements to receive allocations.  
     The actual number of measurements with non-zero allocation might exceed
     this number in order to guarantee the connectivity. If it is zero, the
@@ -849,9 +875,11 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2,
     '''
     K = sij.size[0]
 
+    if nsofar is None:
+        nsofar = np.zeros( (K, K), dtype=float)
     if not sparse_by_fluctuation:
         # First, get the dense optimal network
-        nij = update_A_optimal( sij, nsofar, nadd)
+        nij = update_A_optimal( sij, nadd, nsofar)
         def weight( i, j, epsilon=1e-10):
             n = nij[i,j]
             large = 1/epsilon
@@ -905,7 +933,7 @@ def sparse_A_optimal_network( sij, nsofar, nadd, n_measure=0, connectivity=2,
             addition.append( (i,j))
         only_include_measurements.update( addition)
     
-    nij = update_A_optimal( sij, nsofar, nadd, only_include_measurements)
+    nij = update_A_optimal( sij, nadd, nsofar, only_include_measurements)
 
     return nij
 
@@ -951,7 +979,7 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
     nsofar = nopt - nopt*0.1*np.random.rand( K, K)
     nsofar = matrix( 0.5*(nsofar + nsofar.T))
     nadd = ntotal - sum_upper_triangle( nsofar)
-    nnext = update_A_optimal( sij, nsofar, nadd)
+    nnext = update_A_optimal( sij, nadd, nsofar)
     success1 = True
     if np.abs(sum_upper_triangle( matrix(nnext)) - nadd) > tol:
         print 'Failed to allocate additional samples to preserve the sum!'
@@ -972,7 +1000,7 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
     nsofar = 100*A_optimize( sij0)
 
     nadd = 100
-    nnext = update_A_optimal( sij, nsofar, nadd)
+    nnext = update_A_optimal( sij, nadd, nsofar)
     ntotal = matrix( nsofar + nnext)
 
     C = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
@@ -1012,7 +1040,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
     nadd = 1.
 
     nopt = A_optimize( sij)
-    nij = sparse_A_optimal_network( sij, nsofar, nadd, 0, K, False)
+    nij = sparse_A_optimal_network( sij, nadd, nsofar, 0, K, False)
     
     success = True
 
@@ -1027,7 +1055,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
 
     n_measures = 8
     connectivity = 2
-    nij = sparse_A_optimal_network( sij, nsofar, nadd, n_measures, connectivity,
+    nij = sparse_A_optimal_network( sij, nadd, nsofar, n_measures, connectivity,
                                     True)
     print nij
     trC = np.trace( covariance( sij, nij))
@@ -1114,6 +1142,13 @@ def check_MLest( K=10, sigma=0.1, noerr=True, disconnect=False):
     return np.sqrt(np.sum(np.square(xML - x0))/K)
     
 def unitTest( tol=1.e-4):
+    if (False):
+        K = 150
+        sij = np.random.rand( K, K)
+        sij = matrix( 0.5*(sij + sij.T))
+        # nij = A_optimize( sij)
+        nij = sparse_A_optimal_network( sij )
+
     if (True):
         sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
                        [ 0.1, 1.1, 0.3, 0.2],
@@ -1127,6 +1162,7 @@ def unitTest( tol=1.e-4):
         sij = matrix ( [[ 1., 0.1, 0.1 ],
                         [ 0.1, 1., 0.1 ],
                         [ 0.1, 0.1, 1.2 ]])
+
 
     from scipy.optimize import check_grad
 
