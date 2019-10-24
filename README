@@ -26,6 +26,11 @@ individual (a.k.a. absolute) and relative binding free energy
 calculations.  (Underscored function names __func__ indicate
 user-defined external functions.)
 
+NOTE: For large networks (number of nodes greater than 50), diffnet does
+not scale well in memory.  The users may want to replace A_optimize() or
+update_A_optimal() with the sparse approximation sparse_A_optimal_network()
+in such cases.
+
 import numpy as np
 from diffnet import A_optimize, update_A_optimal
 from diffnet import round_to_integers
