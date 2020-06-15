@@ -1,0 +1,313 @@
+\documentclass{article}
+\usepackage{amsmath}
+
+\newcommand*{\mvec}{\mathbf{\mathrm{vec}}}
+\newcommand*{\abcd}[4]{\left( \begin{array}{cc} #1 & #2 \\ #3 & #4 \end{array} \right)}
+\newcommand*{\mat}[1]{\tilde{#1}}
+
+\begin{document}
+
+\title{Optimal measurement network for pairwise differences}
+
+\section{Cone programming for A-optimal}
+
+The A-optimal is cast as the following SDP.
+
+\begin{equation}
+\min \sum_{i=1}^K u_i
+\end{equation}
+subject to
+\begin{equation}
+n_{ij} \geq 0  \ \forall \{ (i,j)|1 \leq i \leq j \leq K\},
+\end{equation}
+\begin{equation}
+\sum_i n_{ii} + \sum_{i<j} n_{ij} = N,
+\end{equation}
+and
+\begin{equation}
+  \left(
+\begin{array}{cc}
+ F(\{n_{ab}\}) & \vec{e}_i \\
+ \vec{e}_i^t & u_i
+\end{array} \right) \geq 0  \ \text{for } i=1,2, \dots, K
+\end{equation}
+where
+\begin{equation}
+F( \{n_{ab}\} ) = \sum_{a=1}^K V_{aa} n_{aa}
+   + \sum_{a<b} V_{ab} n_{ab} 
+\end{equation}
+with sparse matrices $V_{aa}$ and $V_{ab}$ defined by
+\begin{eqnarray}
+V_{aa;\alpha\beta} &=& s_{aa}^{-2} \delta_{a\alpha}\delta_{a\beta}
+\nonumber \\
+V_{a\neq b;\alpha\beta} &=& s_{ab}^{-2} (\delta_{a\alpha}\delta_{a\beta} + \delta_{b\alpha}\delta_{b\beta} - \delta_{a\alpha}\delta_{b\beta} - \delta_{a\beta}\delta_{b\alpha}) 
+\end{eqnarray}
+
+In the notation of the cone programming, there are $K(K+1)/2 + K$ variables for 
+minimization:
+\begin{eqnarray}
+  \vec{x} &=& ( \vec{n}^t; \vec{u}^t )^t
+  \nonumber \\
+    &=& ( n_{11}, n_{12}, \dots, n_{1K}, n_{22}, n_{23}, \dots, n_{K-1\, K}, n_{KK},
+          u_1, u_2, \dots, u_K )^t
+\end{eqnarray}
+
+The coefficients are
+\begin{equation}
+\vec{c} = (0, 0, \dots, 0, 1, 1, \dots, 1 )^t
+\end{equation}
+with $K(K+1)/2$ entries of 0s and $K$ entries of 1s.
+\begin{equation}
+A = \left( 1, 1, \dots, 1, 0, 0, \dots, 0 \right)
+\end{equation}
+with $K(K+1)/2$ entries of 1s and $K$ entries of 0s.
+
+\begin{equation}
+G = - \left(
+\begin{array}{ccccccc}
+ & I_{K(K+1)/2} & & & 0_{K(K+1)/2, K} & \\
+\mvec(V_{11}^+) & \mvec(V_{12}^+) & \cdots
+\mvec(V_{KK}^+) & \mvec{\abcd{0}{0}{0}{1}} & 0 & \cdots \\
+\mvec(V_{11}^+) & \mvec(V_{12}^+) & \cdots
+\mvec(V_{KK}^+) & 0 & \mvec{\abcd{0}{0}{0}{1}} & \cdots \\
+& & & \cdots & & & \\
+\mvec(V_{11}^+) & \mvec(V_{12}^+) & \cdots
+\mvec(V_{KK}^+) & 0 & \cdots & \mvec{\abcd{0}{0}{0}{1}}
+\end{array}
+\right)
+\end{equation}
+where
+\begin{equation}
+V_{ij}^{+} = \abcd{V_{ij}}{0}{0}{0}
+\end{equation}
+
+\begin{equation}
+h = \left( 
+\begin{array}{c}  
+\vec{0}_{K(K+1)/2}  \\
+  \mvec{\abcd{F(\{ n^{(0)} \})}{\vec{e}_1}{\vec{e}_1^t}{0}} \\
+  \mvec{\abcd{F(\{ n^{(0)} \})}{\vec{e}_2}{\vec{e}_2^t}{0}} \\
+  \vdots \\
+  \mvec{\abcd{F(\{ n^{(0)} \})}{\vec{e}_K}{\vec{e}_K^t}{0}}
+\end{array}
+\right)
+\end{equation}
+
+The dimensions of the cone programming is
+\begin{equation}
+\mathrm{dims} = \left\{
+\begin{array}{rl}
+  \text{'l'}: & K(K+1)/2 \\
+  \text{'q'}: & \text{[ ]} \\
+  \text{'s'}: & [ K+1, K+1, \dots, K+1 ]
+\end{array}
+\right.
+\end{equation}
+
+$G$ is a VERY sparse matrix of $K(K+1)/2 + K(K+1)^2$ rows and
+$K(K+1)/2 + K$ columns, with highly structured entries.  Solving the
+cone programming for large $K$ requires exploiting the structure in
+the problem.
+
+We need to solve the KKT equations
+\begin{equation}
+\left(
+\begin{array}{ccc}
+0 & A^t & G^t \\
+A & 0 & 0 \\
+G & 0 & -W^t W 
+\end{array} \right)
+\left(
+\begin{array}{c}
+\vec{x} \\ y \\ \vec{z} 
+\end{array} \right)
+= \left(
+\begin{array}{c}
+\vec{p} \\ q \\ \vec{l}
+\end{array} \right)
+\end{equation}
+
+$\vec{x}$ and $\vec{p}$ are vectors of length $K(K+1)/2 + K$. We will write 
+\begin{eqnarray}
+\vec{x} &=& ( n_{11}, n_{12}, \dots, n_{KK} ; u_1, u_2, \dots, u_K )^t
+\nonumber \\
+\vec{p} &=& ( p_{11}, p_{12}, \dots, p_{KK} ; \pi_1, \pi_2, \dots, \pi_K )^t
+\end{eqnarray}
+
+$y$ and $q$ are two scalar numbers.
+
+$\vec{z}$ and $\vec{l}$ are vectors of length $K(K+1)/2 + K(K+1)^2$. We denote
+\begin{eqnarray}
+\vec{z} &=& ( z_{11}, z_{12}, \dots, z_{KK}, \mvec( \mat{z}_1)^t, \mvec( \mat{z}_2)^t, \dots, \mvec( \mat{z}_K)^t)^t
+\nonumber \\
+\vec{l} &=& ( l_{11}, l_{12}, \dots, l_{KK}, \mvec( \mat{l}_1)^t, \mvec( \mat{l}_2)^t, \dots, \mvec( \mat{l}_K)^t)^t
+\end{eqnarray}
+where each $\mat{z}_i$ and $\mat{l}_i$ is a $K+1$ by $K+1$ square
+symmetric matrix.  We will write $\mat{z}_i$ in a block form
+\begin{equation}
+\mat{z}_i = \left( 
+\begin{array}{cc}
+\mat{z}_i^\ast & \zeta_i \\
+\zeta_i^t & z_{i,K+1,K+1}
+\end{array} \right)
+\end{equation}
+
+$W$ is a block diagonal matrix, satisfying
+\begin{equation}
+W^t W \vec{z} = \left(
+\begin{array}{c}
+d_{11}^2 z_{11} \\
+d_{12}^2 z_{12} \\
+\vdots \\
+d_{KK}^2 z_{KK} \\
+\mvec( r_1 r_1^t \mat{z}_1 r_1 r_1^t) \\
+\mvec( r_2 r_2^t \mat{z}_2 r_2 r_2^t) \\
+\vdots \\
+\mvec( r_K r_K^t \mat{z}_K r_K r_K^t)
+\end{array} \right)
+\end{equation}
+
+The first group of KKT equations, $A^t y + G^t \vec{x} = \vec{p}$, are
+\begin{equation}
+y - z_{ab} - \mvec(V_{ab})^t\cdot\mvec( \sum_i \mat{z}_i^\ast ) = p_{ab}
+\text{ for } 1\leq a \leq b \leq K
+\label{eq:KKT-1a}
+\end{equation}
+and
+\begin{equation}
+-z_{i,K+1,K+1} = \pi_i  \text{ for } i=1,2,\dots, K
+\label{eq:KKT-1b}
+\end{equation}
+
+There is only one equation for the second group $A \vec{x} = q$:
+\begin{equation}
+\sum_a n_{aa} + \sum_{a<b} n_{ab} = q
+\label{eq:KKT-n-sum}
+\end{equation}
+
+The third group of KKT equations, $G\vec{x} - W^t W \vec{z} = \vec{s}$, are
+\begin{equation}
+-n_{ab} - d_{ab}^2 z_{ab} = l_{ab} \text{ for } 1\leq a \leq b \leq K
+\label{eq:KKT-3a}
+\end{equation}
+and
+\begin{equation}
+-\abcd{F( \{ n_{ab} \})}{0}{0}{u_i} - r_i r_i^t \mat{z}_i r_i r_i^t = \mat{l}_i
+\label{eq:KKT-3b}
+\end{equation}
+Eq.~\ref{eq:KKT-3b} represents $K(K+1)^2$ equations.
+
+We will first eliminate the variables in $\mat{z}_i^\ast$. Denoting
+\begin{equation}
+R_i = r_i^{-t} r_i^{-1} = \left(
+  \begin{array}{cc}
+    R_i^\ast & \gamma_i \\
+    \gamma_i^t & R_{i,K+1,K+1} 
+  \end{array}\right)
+\end{equation}
+Eq.~\ref{eq:KKT-3b} can be rewritten as
+\begin{equation}
+R_i \abcd{F(\{n_{ab}\})}{0}{0}{u_i} R_i + \mat{z}_i = - R_i \mat{l}_i R_i
+\label{eq:KKT-3b-R}
+\end{equation}
+Writing $L_i \equiv R_i \mat{l}_i R_i$ in block form
+\begin{equation}
+L_i = \left(
+\begin{array}{cc}
+  L_i^\ast & \lambda_i \\
+  \lambda_i^t & L_{i,K+1,K+1} 
+\end{array} \right)
+\end{equation}
+Eq.~\ref{eq:KKT-3b-R} becomes 
+\begin{equation}
+R_i^\ast F( \{n_{ab}\}) R_i^\ast + \gamma_i \gamma_i^t u_i + \mat{z}_i^\ast = - L_i^\ast
+\label{eq:KKT-Fuz}
+\end{equation}
+\begin{equation}
+R_i^\ast F( \{n_{ab}\}) \gamma_i + \gamma_i R_{i,K+1,K+1} u_i + \zeta_i = - \lambda_i
+\label{eq:KKT-n-u-zeta}
+\end{equation}
+and
+\begin{equation}
+\gamma_i^t F( \{ n_{ab}\})\gamma_i + R_{i,K+1,K+1}^2 u_i + z_{i,K+1,K+1} = -L_{i,K+1,K+1}
+\end{equation}
+Because $z_{i,K+1,K+1} = -\pi_i$, the last equation is
+\begin{equation}
+\gamma_i^t F( \{ n_{ab}\})\gamma_i + R_{i,K+1,K+1}^2 u_i = \pi_i - L_{i,K+1,K+1}
+\label{eq:KKT-n-u}
+\end{equation}
+
+Eq.~\ref{eq:KKT-Fuz} and Eq.~\ref{eq:KKT-1a} together lead to
+\begin{equation}
+z_{\alpha\beta} = y - p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot \mvec\left(\sum_i R_i^\ast F(\{ n_{ab}\}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right) - \mvec(V_{\alpha\beta})^t\cdot \mvec\left(\sum_i L_i^\ast\right)
+\end{equation}
+
+Plugging the above in Eq.~\ref{eq:KKT-3a}, we also eliminate $z_{ab}$.
+\begin{eqnarray}
+&&-n_{\alpha\beta} - d_{\alpha\beta}^2 \left( y + \mvec(V_{\alpha\beta})^t\cdot
+\mvec\left(\sum_i R_i^\ast F(\{ n_{ab} \}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right)\right)
+\nonumber \\
+&=& l_{\alpha\beta} - d_{\alpha\beta}^2 \left(p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot
+\mvec\left( \sum_i L_i^\ast \right)\right)
+\label{eq:KKT-n-u-y}
+\end{eqnarray}
+
+Eq.~\ref{eq:KKT-n-u-y} ($K(K+1)/2$ equations), Eq.~\ref{eq:KKT-n-sum}
+(1 equation), Eq.~\ref{eq:KKT-n-u-zeta} ($K^2$ equations), and
+Eq.~\ref{eq:KKT-n-u} ($K$ equations) together determine the
+variables $\{ n_{ab} \}$ ($K(K+1)/2$ variables), $\{ u_i \}$ ($K$
+variables), $y$ (1 variable), and $\{ \zeta_i \}$ ($K^2$ variables).
+
+The matrix of the form $ R F(\{ n_{ab} \}) R$ is
+\begin{eqnarray}
+R F( \{ n_{ab} \}) R &=& \sum_a R V_{aa} R n_{aa} + \sum_{a<b} R V_{ab} R n_{ab}
+\nonumber \\
+&=& \sum_a s_{aa}^{-2} R_a R_a^t n_{aa} 
+ + \sum_{a<b} s_{ab}^{-2} (R_a R_a^t + R_b R_b^t - R_a R_b^t - R_b R_a^t) n_{ab}
+\nonumber \\
+\end{eqnarray}
+where $R_a$ is the column vector of the $a$th column of $R$.
+
+The vector of the form $ R F(\{ n_{ab} \}) \gamma $ is
+\begin{equation}
+R F( \{ n_{ab} \}) \gamma = \sum_a s_{aa}^{-2} R_a \gamma_a n_{aa}
+  + \sum_{a<b} s_{ab}^{-2} ( R_a \gamma_a + R_b \gamma_b - R_a \gamma_b - R_b \gamma_a) n_{ab}
+\end{equation}
+
+The scalar of the form $\gamma^t F(\{ n_{ab} \})$ is
+\begin{equation}
+\gamma^t F(\{ n_{ab} \}) \gamma = \sum_a s_{aa}^{-2} \gamma_a^2 n_{aa}
+ + \sum_{a<b} s_{ab}^{-2} ( \gamma_a^2 + \gamma_b^2 - 2\gamma_a\gamma_b ) n_{ab}
+\end{equation}
+
+The inner product $\mvec( V_{\alpha\beta})^t \cdot \mvec( X )$ is
+\begin{equation}
+\mvec( V_{\alpha\beta})^t \cdot \mvec( X ) = \left\{
+\begin{array}{cl}
+s_{\alpha\alpha}^{-2} X_{\alpha\alpha}   & \text{ if } \alpha = \beta \\
+s_{\alpha\beta}^{-2} \left(X_{\alpha\alpha} + X_{\beta\beta} - X_{\alpha\beta} - X_{\beta\alpha}\right)
+\end{array} \right.
+\end{equation}
+
+The equation for $\{n_{ab}\}$, $\{u_i\}$, $y$, and $\{ \zeta_i \}$, summarizing Eq.~\ref{eq:KKT-n-u-y}, ~\ref{eq:KKT-n-sum}, ~\ref{eq:KKT-n-u-zeta}, and ~\ref{eq:KKT-n-u}, is
+\begin{equation}
+B \left(
+\begin{array}{c}
+n_{11} \\
+n_{12} \\
+\vdots \\
+n_{KK} \\
+u_1 \\
+u_2 \\
+\vdots \\
+u_K \\
+y \\
+\zeta_1 \\
+\zeta_2 \\
+\vdots \\
+\zeta_K
+\end{array} \right) = D
+\end{equation}
+  
+
+\end{document}
