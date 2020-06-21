@@ -239,7 +239,7 @@ Because $z_{i,K+1,K+1} = -\pi_i$, the last equation is
 
 Eq.~\ref{eq:KKT-Fuz} and Eq.~\ref{eq:KKT-1a} together lead to
 \begin{equation}
-z_{\alpha\beta} = y - p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot \mvec\left(\sum_i R_i^\ast F(\{ n_{ab}\}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right) - \mvec(V_{\alpha\beta})^t\cdot \mvec\left(\sum_i L_i^\ast\right)
+z_{\alpha\beta} = y - p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot \mvec\left(\sum_i R_i^\ast F(\{ n_{ab}\}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right) + \mvec(V_{\alpha\beta})^t\cdot \mvec\left(\sum_i L_i^\ast\right)
 \end{equation}
 
 Plugging the above in Eq.~\ref{eq:KKT-3a}, we also eliminate $z_{ab}$.
@@ -247,7 +247,7 @@ Plugging the above in Eq.~\ref{eq:KKT-3a}, we also eliminate $z_{ab}$.
 &&-n_{\alpha\beta} - d_{\alpha\beta}^2 \left( y + \mvec(V_{\alpha\beta})^t\cdot
 \mvec\left(\sum_i R_i^\ast F(\{ n_{ab} \}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right)\right)
 \nonumber \\
-&=& l_{\alpha\beta} - d_{\alpha\beta}^2 \left(p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot
+&=& l_{\alpha\beta} - d_{\alpha\beta}^2 \left(p_{\alpha\beta} - \mvec( V_{\alpha\beta})^t\cdot
 \mvec\left( \sum_i L_i^\ast \right)\right)
 \label{eq:KKT-n-u-y}
 \end{eqnarray}
@@ -285,7 +285,7 @@ The inner product $\mvec( V_{\alpha\beta})^t \cdot \mvec( X )$ is
 \mvec( V_{\alpha\beta})^t \cdot \mvec( X ) = \left\{
 \begin{array}{cl}
 s_{\alpha\alpha}^{-2} X_{\alpha\alpha}   & \text{ if } \alpha = \beta \\
-s_{\alpha\beta}^{-2} \left(X_{\alpha\alpha} + X_{\beta\beta} - X_{\alpha\beta} - X_{\beta\alpha}\right)
+s_{\alpha\beta}^{-2} \left(X_{\alpha\alpha} + X_{\beta\beta} - X_{\alpha\beta} - X_{\beta\alpha}\right) & \text{ if } \alpha \neq \beta
 \end{array} \right.
 \end{equation}
 
@@ -308,6 +308,6 @@ y \\
 \zeta_K
 \end{array} \right) = D
 \end{equation}
-  
+where B and D are as follows:
 
 \end{document}
