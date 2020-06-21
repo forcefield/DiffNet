@@ -311,9 +311,10 @@ def Aopt_KKT_solver( si2, W):
     d2s = ds**2
 
     # for rti in rtis: print rti
-    for i, ri in enumerate(ris): 
-        print 'r[%d]=' % i
-        print ri
+    if (False):
+        for i, ri in enumerate(ris): 
+            print 'r[%d]=' % i
+            print ri
 
     # R_i = r_i^{-t}r_i^{-1} 
     Ris = [ matrix(0.0, (K+1, K+1)) for i in xrange(K) ]
@@ -491,6 +492,13 @@ def Aopt_KKT_solver( si2, W):
 
     # print Bm
 
+    # Compare with the default KKT solver.
+    G, h, A = Aopt_GhA( si2)
+    dims = dict( l = K*(K+1)/2,
+                 q = [],
+                 s = [K+1]*K )
+    default_solver = misc.kkt_ldl( G, dims, A)(W)
+
     #######
     # 
     #  The solver
@@ -498,10 +506,34 @@ def Aopt_KKT_solver( si2, W):
     #######
     def kkt_solver( x, y, z):
         
-        print 'x0,y0,z0='
-        print x
-        print y
-        print z
+        if (False):
+            print 'x0,y0,z0='
+            print x
+            print y
+            print z
+
+        if (False):
+            x0 = matrix( 0., x.size)
+            y0 = matrix( 0., y.size)
+            z0 = matrix( 0., z.size)
+            x0[:] = x[:]
+            y0[:] = y[:]
+            z0[:] = z[:]
+
+            # Get default solver solutions.
+            xp = matrix( 0., x.size)
+            yp = matrix( 0., y.size)
+            zp = matrix( 0., z.size)
+            xp[:] = x[:]
+            yp[:] = y[:]
+            zp[:] = z[:]
+            default_solver( xp, yp, zp)
+            offset = K*(K+1)/2
+            for i in xrange(K):
+                for a in xrange(K+1):
+                    for b in xrange(a+1, K+1):
+                        zp[offset+b*(K+1)+a] = zp[offset+a*(K+1)+b]
+                offset += (K+1)*(K+1)
 
         pab = x[:K*(K+1)/2]  # p_{ab}  1<=a<=b<=K
         pis = x[K*(K+1)/2:]  # \pi_i   1<=i<=K
@@ -510,6 +542,7 @@ def Aopt_KKT_solver( si2, W):
         lmats = z[K*(K+1)/2:] # \mat{l}_i, each a (K+1)x(K+1) matrix, 1<=i<=K
 
         # lmats[i*(K+1)*(K+1):(i+1)*(K+1)*(K+1)] = R_i \mat{l}_i R_i = vec(L_i)
+        offset = K*(K+1)/2
         for i in xrange(K):
             start, end = i*(K+1)*(K+1), (i+1)*(K+1)*(K+1)
             Ri = Ris[i]
@@ -517,6 +550,7 @@ def Aopt_KKT_solver( si2, W):
             for a in xrange(K+1):
                 for b in xrange(a+1, K+1):
                     lmats[start+b*(K+1)+a] = lmats[start+a*(K+1)+b]
+                    z[offset+start+b*(K+1)+a] = z[offset+start+a*(K+1)+b]
             lmats[start:end] = cngrnc( Ri, lmats[start:end], K+1)[:]
         Cv = np.zeros( nvars)
 
@@ -601,20 +635,49 @@ def Aopt_KKT_solver( si2, W):
         F = matrix( np.diag( np.sum(f, axis=1)), (K,K))
         f[::K+1] = 0
         F -= f
+        offset = K*(K+1)/2
         for i in xrange( K):
             start, end = i*(K+1)*(K+1), (i+1)*(K+1)*(K+1)
             Fu = matrix( 0.0, (K+1, K+1))
             Fu[:K,:K] = F
             Fu[K,K] = ui[i]
-            lmats[start:end] = -cngrnc( ris[i], lmats[start:end], K+1)[:]
+            lmats[start:end] = -cngrnc( rtis[i], z[offset+start:offset+end], K+1)[:]
             Fu = cngrnc( rtis[i], Fu, K+1)
             lmats[start:end] -= Fu[:]
         z[K*(K+1)/2:] = lmats
 
-        print 'x,y,z='
-        print x
-        print y
-        print z
+        if (False):
+            dz = np.max(np.abs(z - zp))
+            dx = np.max(np.abs(x - xp))
+            dy = np.max(np.abs(y - yp))
+            tol = 1e-8
+            if dx > tol or dy > tol or dz > tol:
+                for i, (r, rti) in enumerate( zip(ris, rtis)):
+                    print 'r[%d]=' % i
+                    print r
+                    print 'rti[%d]=' % i
+                    print rti
+                    print 'rti.T*r='
+                    print rti.T*r
+                print 'x0, y0, z0='
+                print x0
+                print y0
+                print z0
+            if dx > tol:
+                print 'dx='
+                print dx
+                print x
+                print xp
+            if dy > tol:
+                print 'dy='
+                print dy
+                print y
+                print yp
+            if dz > tol:
+                print 'dz='
+                print dz
+                print z
+                print zp
 
     ###
     #  END of kkt_solver.
@@ -738,9 +801,13 @@ def A_optimize_fast( sij, N=1., nsofar=None):
     def default_kkt_solver( W):
         return kkt_ldl( Gm, dims, Am)(W)
 
-    sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, maxiters=10,
-                          kktsolver=default_kkt_solver)
-#                          kktsolver=lambda W: Aopt_KKT_solver( si2, W))
+    sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
+                          options=dict(maxiters=20,
+#                                       abstol=1e-3,
+#                                       reltol=1e-3,
+                                       feastol=1e-5),
+                          #kktsolver=default_kkt_solver)
+                          kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
     return solution_to_nij( sol['x'], K)
   
@@ -784,7 +851,7 @@ def test_kkt_solver( ntrials=100, tol=1e-8):
         return Aopt_KKT_solver( si2, W)
 
     for t in xrange( ntrials):
-        x = matrix( 1e-5*(np.random.rand( K*(K+1)/2+K) - 0.5), (K*(K+1)/2+K, 1))
+        x = matrix( 1*(np.random.rand( K*(K+1)/2+K) - 0.5), (K*(K+1)/2+K, 1))
         y = matrix( np.random.rand( 1), (1,1))
         z = matrix( 0.0, (K*(K+1)/2 + K*(K+1)*(K+1), 1))
         z[:K*(K+1)/2] = 5.*(np.random.rand( K*(K+1)/2) - 0.5)
@@ -846,17 +913,17 @@ def test_kkt_solver( ntrials=100, tol=1e-8):
 if __name__ == '__main__':
     # test_congruence()
 
-    test_kkt_solver(ntrials=2)
+    # test_kkt_solver(ntrials=100)
 
-    import sys
-    sys.exit()
+    #import sys
+    #sys.exit()
 
     sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
                    [ 0.1, 1.1, 0.3, 0.2],
                    [ 0.2, 0.3, 1.2, 0.1],
                    [ 0.5, 0.2, 0.1, 0.9]])
     # sij = sij[:2,:2]
-    sij = matrix( [[1., 1], [1, 2.]])
+    # sij = matrix( [[1., 1], [1, 2.]])
     nij = A_optimize_fast( sij)
     nij0 = A_optimize( sij)
     print nij0
