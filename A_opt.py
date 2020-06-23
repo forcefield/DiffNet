@@ -377,8 +377,8 @@ def Aopt_KKT_solver( si2, W):
             RVRs[row,:,:] = si2[a,b]*(RRaa + RRbb - RRab - RRba)
             row += 1
 
-    #  We first solve for K(K+1)/2 n_{ab}, K u_i, 1 y, K^2 zeta_i
-    nvars = K*(K+1)/2 + K + 1 + K*K
+    #  We first solve for K(K+1)/2 n_{ab}, K u_i, 1 y
+    nvars = K*(K+1)/2 + K + 1 
     Bm = matrix( 0.0, (nvars, nvars))
 
     # The LHS matrix of equations
@@ -456,39 +456,10 @@ def Aopt_KKT_solver( si2, W):
 
     ###
     #  The LHS matrix of the equations
-    #  R*_i F g_i  + g_i R_{i,K+1,K+1} u_i + z_i = - li
-    ###
-    assert(K*(K+1)/2==row)
-    uoffset = K*(K+1)/2
-    zoffset = uoffset + K + 1
-    for i in xrange(K):
-        # RVg_{ab} := R* V_{ab} g 
-        #  = { s_{aa}^{-2} R*_a g_a s_{aa}^2   if a=b
-        #    { s_{ab}^{-2} (R*_a g_a + R*_b g_b - R*_a g_b - R*_b g_a) if a!=b
-        Ri = Ris[i][:K,:K]
-        gi = Ris[i][:K,K]
-        ab = 0
-        for a in xrange(K):
-            # Coefficients for n_{aa}
-            Bm[row:row+K, ab] = si2[a,a]*Ri[:,a]*gi[a]
-            ab += 1
-            for b in xrange(a+1, K):
-                RVg = Ri[:,a]*gi[a]+Ri[:,b]*gi[b] - Ri[:,a]*gi[b]-Ri[:,b]*gi[a]
-                # Coefficients for n_{ab}
-                Bm[row:row+K, ab] = si2[a,b]*RVg
-                ab += 1
-        RiKK = Ris[i][K,K]
-        # Coefficients for u_i
-        Bm[row:row+K, uoffset+i] = RiKK*gi  
-        # Coefficients for z_i
-        Bm[row:row+K, zoffset+i*K:zoffset+(i+1)*K] = np.diag( np.ones( K))  
-        row += K
-
-    ###
-    #  The LHS matrix of the equations
     #  g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
     #  
-    assert(K*(K+1)/2 + K*K == row)
+    uoffset = K*(K+1)/2
+    assert(K*(K+1)/2 == row)
     for i in xrange(K):
         gi = Ris[i][K,:K]
         RiKK = Ris[i][K,K]
@@ -509,7 +480,7 @@ def Aopt_KKT_solver( si2, W):
     ###
     #  The LHS coefficients of the equation
     #  \sum_{ab} n_{ab} = q
-    assert(K*(K+1)/2 + K*K + K == row)
+    assert(K*(K+1)/2 + K == row)
     Bm[row,:K*(K+1)/2] = 1.
 
     # print Bm[:,:Bm.size[0]/2]
@@ -608,18 +579,8 @@ def Aopt_KKT_solver( si2, W):
                 row += 1
         
         # The RHS of equations
-        # R*_i F g_i  + g_i R_{i,K+1,K+1} u_i + z_i = - li
-        ###
-        assert(K*(K+1)/2 == row)
-        for i in xrange(K):
-            # L_i = ( L*_i        l_i     )
-            #       ( l_i^t L_{i,K+1,K+1} )
-            Cv[row:row+K] = -lmats[(i+1)*(K+1)*(K+1)-(K+1):(i+1)*(K+1)*(K+1)-1].T
-            row += K
-
-        # The RHS of equations
         # g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
-        assert(K*(K+1)/2 + K*K == row)
+        assert(K*(K+1)/2 == row)
         for i in xrange(K):
             Cv[row] = pis[i] - lmats[(i+1)*(K+1)*(K+1)-1]
             row += 1
@@ -627,7 +588,7 @@ def Aopt_KKT_solver( si2, W):
         ###
         #  The RHS of the equation
         #  \sum_{ab} n_{ab} = q
-        assert(K*(K+1)/2 + K*K + K==row)
+        assert(K*(K+1)/2 + K==row)
         Cv[row] = y[0]
         row += 1
 
@@ -887,10 +848,10 @@ def A_optimize_fast( sij, N=1., nsofar=None):
         return kkt_ldl( Gm, dims, Am)(W)
 
     sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
-                          options=dict(maxiters=20,
+                          options=dict(maxiters=50,
 #                                       abstol=1e-3,
 #                                       reltol=1e-3,
-                                       feastol=1e-5),
+                                       feastol=1e-6),
                           #kktsolver=default_kkt_solver)
                           kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
@@ -1057,10 +1018,10 @@ if __name__ == '__main__':
                    [ 0.5, 0.2, 0.1, 0.9]])
     # sij = sij[:2,:2]
     #sij = matrix( [[1., 1], [1, 1.1]])
-    K = 100
+    K = 40
     sij = matrix( np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
     nij = A_optimize_fast( sij)
-    # nij0 = A_optimize( sij)
-    # print nij0
+    nij0 = A_optimize( sij)
+    print nij0
     print nij
