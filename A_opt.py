@@ -287,7 +287,37 @@ def Aopt_KKT_solver_naive( si2, W):
         #pdb.set_trace()
 
     return kkt_solver
-                    
+
+def tri2symm( x, n):
+    '''
+    Convert the sequence x[0,0], x[0,1], x[0,2], ..., x[0,n-1],
+    x[1,1], ... x[n-1,n-1] from the upper triangle of a square
+    symmetric matrix to the full symmetric matrix.
+    '''
+    y = matrix( 0., (n, n))
+    p = 0
+    for i in xrange( n):
+        y[i:,i] = x[p:p+n-i]
+        y[i, i:] = y[i:, i].T
+        p += (n-i)
+    return y
+
+def Fisher_matrix( si2, nij):
+    '''
+    Return the Fisher information matrix.
+    
+    Args:
+
+    si2: KxK symmetric matrix, si2[i,j] = 1/s[i,j]^2
+
+    nij: KxK symmetric matrix of n[i,j].
+    '''
+    K = si2.size[0]
+    F = -cvxopt.mul(nij[:], si2[:])
+    d = -np.sum( np.array( F).reshape( K,K), axis=0)
+    F[::K+1] = d[:]
+    return matrix( F, (K,K))
+
 def Aopt_KKT_solver( si2, W):
     '''
     Construct a solver that solves the KKT equations associated with the cone 
@@ -493,11 +523,12 @@ def Aopt_KKT_solver( si2, W):
     # print Bm
 
     # Compare with the default KKT solver.
-    G, h, A = Aopt_GhA( si2)
-    dims = dict( l = K*(K+1)/2,
-                 q = [],
-                 s = [K+1]*K )
-    default_solver = misc.kkt_ldl( G, dims, A)(W)
+    if (False):
+        G, h, A = Aopt_GhA( si2)
+        dims = dict( l = K*(K+1)/2,
+                     q = [],
+                     s = [K+1]*K )
+        default_solver = misc.kkt_ldl( G, dims, A)(W)
 
     #######
     # 
@@ -622,19 +653,10 @@ def Aopt_KKT_solver( si2, W):
         #                     = -L_i - R_i diag(F, u_i) R_i
         # We return 
         # r_i^t \mat{z}_i r_i = -r_i^t L_i r_i - r_i^{-1} diag(F, u_i) r_i^{-t} 
-        nab = matrix( 0.0, (K, K))
-        ab = 0
-        for a in xrange(K):
-            for b in xrange(a, K):
-                nab[a,b] = nab[b,a] = x[ab]
-                ab += 1
         ui = x[-K:]
+        nab = tri2symm( x, K)
 
-        # Check solution consistency here!
-        f = cvxopt.mul( si2, matrix( nab, (K, K)))
-        F = matrix( np.diag( np.sum(f, axis=1)), (K,K))
-        f[::K+1] = 0
-        F -= f
+        F = Fisher_matrix( si2, nab)
         offset = K*(K+1)/2
         for i in xrange( K):
             start, end = i*(K+1)*(K+1), (i+1)*(K+1)*(K+1)
@@ -685,6 +707,69 @@ def Aopt_KKT_solver( si2, W):
         
     return kkt_solver
 
+def Aopt_Gfunc( si2, x, y, alpha=1.0, beta=0.0, trans='N'):
+    '''
+    Compute 
+
+    y := alpha G x + beta y if trans=='N'
+
+    and
+    
+    y := alpha G^t x + beta y if trans!='N'
+
+    Let x = (n11, n12, ... nKK, u1, u2, ..., uK)^t
+    a G x + b y = -a ( n11, n12, ..., nKK, 
+                        vec( F(n), 0, 
+                                0, u1 ),
+                        vec( F(n), 0,
+                                0, u2 ),
+                        ... ) + b y
+
+    Let x = (x11, x12, ...., xKK, x_1, x_2, ... x_K), where
+    x_i are (K+1)x(K+1) matrices.
+    a Gt x + b y = -a ( x11 + vec( V11).vec( sum_i x_i),
+                        x12 + vec( V12).vec( sum_i x_i),
+                        ...
+                        xKK + vec( VKK).vec( sum_i x_i),
+                        x_{1,K+1,K+1},
+                        ...
+                        x_{K,K+1,K+1} ) + b y
+    '''
+    K = si2.size[0]
+    hkkp1 = K*(K+1)/2
+    kp1sqr = (K+1)*(K+1)
+    if 'N'==trans:
+        u = alpha*x[-K:]
+        n = tri2symm( x[:-K], K)
+        F = Fisher_matrix( si2, alpha*n)
+        y[:hkkp1] = -alpha*x[:hkkp1] + beta*y[:hkkp1]
+        Fu = matrix( 0., (K+1, K+1))
+        Fu[:K,:K] = F
+        start = hkkp1
+        for i in xrange(K):
+            Fu[K,K] = u[i]
+            y[start:start+kp1sqr] = -Fu[:] + beta*y[start:start+kp1sqr]
+            start += kp1sqr
+    if 'T'==trans:
+        xab = alpha*x[:hkkp1]
+        xKK = alpha*x[hkkp1+kp1sqr-1::kp1sqr]
+        start = hkkp1
+        xsum = matrix( 0., (kp1sqr, 1))
+        for i in xrange(K):
+            xsum += x[start:start+kp1sqr]
+            start += kp1sqr
+        xsum *= alpha
+        xsum = matrix( xsum, (K+1, K+1))
+        ab = 0
+        for a in xrange(K):
+            xab[ab] += si2[a,a]*xsum[a,a]
+            ab += 1
+            for b in xrange(a+1, K):
+                xab[ab] += si2[b,a]*(xsum[a,a] + xsum[b,b] - 2*xsum[b,a])
+                ab += 1
+        y[:hkkp1] = -xab + beta*y[:hkkp1]
+        y[hkkp1:] = -xKK + beta*y[hkkp1:]
+
 def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     '''Return the G, h, and A matrix for the cone programming to solve the
     A-optimal problem.
@@ -708,8 +793,8 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     K = si2.size[0]
 
     if G_as_function:
-        def G(x, y, alpha=1.0, beta=0.0, trans='N'):
-            pass
+        def G( x, y, alpha=1., beta=0., trans='N'):
+            return Aopt_Gfunc( si2, x, y, alpha, beta, trans)
     else:
         nrows, ncols = K*(K+1)/2 + K*(K+1)*(K+1), K*(K+1)/2 + K
                  
@@ -787,9 +872,9 @@ def A_optimize_fast( sij, N=1., nsofar=None):
     si2 = cvxopt.div( 1., sij**2) 
     K = si2.size[0]
 
-    Gm, hv, Am = Aopt_GhA( si2, nsofar)
-    print Gm
-    print hv
+    Gm, hv, Am = Aopt_GhA( si2, nsofar, G_as_function=True)
+    # print Gm
+    # print hv
     dims = dict( l = K*(K+1)/2,
                  q = [],
                  s = [K+1]*K )
@@ -829,11 +914,15 @@ def test_congruence():
 
     print yp - y[:]
 
-def test_kkt_solver( ntrials=100, tol=1e-8):
+def test_kkt_solver( ntrials=100, tol=1e-6):
     sij = matrix( [[ 1., 0.1, 0.2, 0.5],
                    [ 0.1, 2., 0.3, 0.2],
                    [ 0.2, 0.3, 1.2, 0.1],
                    [ 0.5, 0.2, 0.1, 0.9]])
+    K = 2
+    sij = matrix( np.random.rand( K*K), (K, K))
+    sij = 0.5*(sij + sij.T)
+
     #sij = sij[:2,:2]
 
     si2 = cvxopt.div( 1., sij**2)
@@ -908,23 +997,70 @@ def test_kkt_solver( ntrials=100, tol=1e-8):
         if tol < np.max( [dx, dy, dz]):
             import pdb
             pdb.set_trace()
-        
-                    
+
+def test_Gfunc( tol=1e-10):
+    K = 5
+    sij = matrix( np.random.rand( K*K), (K, K))
+    sij = 0.5*(sij.T + sij)
+    si2 = cvxopt.div( 1., sij**2)
+    alpha = 1.5
+    beta = 0.25
+    G, h, A = Aopt_GhA( si2)
+
+    trans = 'N'
+    nx = K*(K+1)/2+K
+    ny = K*(K+1)/2+K*(K+1)*(K+1)
+    x = matrix( np.random.rand( nx), (nx, 1))
+    y = matrix( np.random.rand( ny), (ny, 1))
+
+    yp = y[:]
+    Aopt_Gfunc( si2, x, y, alpha, beta, trans)
+    yp = alpha*G*x + beta*yp
+
+    dy = np.max(np.abs(y - yp))
+    if (dy > tol):
+        print 'G function fails for trans=N: dy=%g' % dy
+    else:
+        print 'G function succeeds for trans=N: dy=%g' % dy
+
+    trans = 'T'
+    nx = K*(K+1)/2 + K*(K+1)*(K+1)
+    ny = K*(K+1)/2 + K
+    x = matrix( np.random.rand( nx), (nx, 1))
+    y = matrix( np.random.rand( ny), (ny, 1))
+    
+    for i in xrange(K):
+        start = K*(K+1)/2 + i*(K+1)*(K+1)
+        for a in xrange(K+1):
+            for b in xrange(a+1, K+1):
+                x[start+a*(K+1)+b] = x[start+b*(K+1)+a]
+    
+    yp = y[:]
+    Aopt_Gfunc( si2, x, y, alpha, beta, trans)
+    yp = alpha*G.T*x + beta*yp
+
+    dy = np.max(np.abs(y - yp))
+    if (dy > tol):
+        print 'G function fails for trans=T: dy=%g' % dy
+    else:
+        print 'G function succeeds for trans=T: dy=%g' % dy
+
 if __name__ == '__main__':
     # test_congruence()
+    # test_Gfunc()
 
     # test_kkt_solver(ntrials=100)
-
-    #import sys
-    #sys.exit()
 
     sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
                    [ 0.1, 1.1, 0.3, 0.2],
                    [ 0.2, 0.3, 1.2, 0.1],
                    [ 0.5, 0.2, 0.1, 0.9]])
     # sij = sij[:2,:2]
-    # sij = matrix( [[1., 1], [1, 2.]])
+    #sij = matrix( [[1., 1], [1, 1.1]])
+    K = 100
+    sij = matrix( np.random.rand( K*K), (K, K))
+    sij = 0.5*(sij + sij.T)
     nij = A_optimize_fast( sij)
-    nij0 = A_optimize( sij)
-    print nij0
+    # nij0 = A_optimize( sij)
+    # print nij0
     print nij
