@@ -21,7 +21,7 @@ def solution_to_nij( x, K):
             p += 1
     return n
 
-def cngrnc(r, x, n, alpha = 1.0):
+def cngrnc(r, x, n, xstart=0, alpha = 1.0):
     """
     Congruence transformation
     
@@ -31,20 +31,21 @@ def cngrnc(r, x, n, alpha = 1.0):
     """
 
     # TODO: use symmetry!
-    return alpha*r.T*matrix(x, (n,n))*r
+    # return alpha*r.T*matrix(x, (n,n))*r
     
     # Scale diagonal of x by 1/2.
-    x[::n+1] *= 0.5
+    nsqr = n*n
+    xend = xstart+nsqr
+    x[xstart:xend:n+1] *= 0.5
     
     # a := tril(x)*r
     a = +r
-    tx = matrix(x, (n,n))
+    tx = matrix(x[xstart:xend], (n,n))
     blas.trmm(tx, a, side = 'L')
     
     # x := alpha*(a*r' + r*a')
     blas.syr2k(r, a, tx, trans = 'T', alpha = alpha)
-    x[:] = tx[:]
-    return x
+    x[xstart:xend] = tx[:]
 
 def congruence_matrix( r, W, offset=0):
     '''
@@ -288,6 +289,15 @@ def Aopt_KKT_solver_naive( si2, W):
 
     return kkt_solver
 
+def symmetrize_matrix( x, n, xstart=0):
+    '''
+    Given a sequence x representing the lower triangle of a symmetric square
+    nxn matrix, fill in the upper triangle with symmetric values.
+    '''
+    for a in xrange(n):
+        for b in xrange(a+1, n):
+            x[xstart+b*n+a] = x[xstart+a*n+b]
+
 def tri2symm( x, n):
     '''
     Convert the sequence x[0,0], x[0,1], x[0,2], ..., x[0,n-1],
@@ -339,6 +349,10 @@ def Aopt_KKT_solver( si2, W):
     ris = W['r']
 
     d2s = ds**2
+    di2s = dis**2
+
+    # print 'd='
+    # print ds
 
     # for rti in rtis: print rti
     if (False):
@@ -383,9 +397,9 @@ def Aopt_KKT_solver( si2, W):
 
     # The LHS matrix of equations
     # 
-    # -n_{ab} - d_{ab}^2 vec(V_{ab})^t . vec( \sum_i R_i* F R_i*) 
-    # + \sum_i d_{ab}^2 vec(V_{ab})^t . vec( g_i g_i^t) u_i - d_{ab}^2 y 
-    # = l_{ab} - d_{ab}^2 ( p_{ab} - vec(V_{ab})^t . vec(\sum_i L_i*)
+    # d_{ab}^{-2} n_{ab} + vec(V_{ab})^t . vec( \sum_i R_i* F R_i*) 
+    # + \sum_i vec(V_{ab})^t . vec( g_i g_i^t) u_i + y 
+    # = -d_{ab}^{-2}l_{ab} + ( p_{ab} - vec(V_{ab})^t . vec(\sum_i L_i*)
     # 
 
     # Coefficients for n_{ab}
@@ -399,18 +413,16 @@ def Aopt_KKT_solver( si2, W):
                 # VdotRVR := vec(V_{aa})^t . vec( RVR)
                 #          = s_{aa}^{-2}*RVR_{aa}
                 VdotRVR = si2[a,a]*RVR[a,a]
-                # -d_{aa}^2 *
                 # vec(V_{aa})^t . vec(\sum_i R*_i V_{ap,bp} R*_i) n_{ap,bp}
-                Bm[row, apbp] = -d2s[row]*VdotRVR
+                Bm[row, apbp] = VdotRVR
                 row += 1
                 for b in xrange(a+1, K):
                     # VdotRVR := vec(V_{ab})^t . vec( RVR)
                     #          = s_{ab}^{-2}*( RVR_{aa} + RVR_{bb} 
                     #                         - RVR_{ab} - RVR_{ba})
                     VdotRVR = si2[a,b]*(RVR[a,a]+RVR[b,b] - RVR[a,b]-RVR[b,a])
-                    # -d_{ab}^2 *
                     # vec(V_{ab})^t . vec(\sum_i R*_i V_{ap,bp} R*_i) n_{ap,bp}
-                    Bm[row, apbp] = -d2s[row]*VdotRVR
+                    Bm[row, apbp] = VdotRVR
                     row += 1
             apbp += 1
     assert(K*(K+1)/2 == row)
@@ -418,7 +430,7 @@ def Aopt_KKT_solver( si2, W):
     row = 0
     for a in xrange(K):
         for b in xrange(a, K):
-            Bm[row, row] -= 1 # - n_{ab}
+            Bm[row, row] += di2s[row] # d_{ab}^{-2} n_{ab}
             row += 1
     assert(K*(K+1)/2 == row)
 
@@ -437,13 +449,13 @@ def Aopt_KKT_solver( si2, W):
             # Vdotgg := vec(V_{aa})^t . vec(gg)
             #        = {  s_{aa}^2 gg_{aa}
             Vdotgg = si2[a,a]*gg[a,a]
-            Bm[row, offset+i] = -d2s[row]*Vdotgg
+            Bm[row, offset+i] = Vdotgg
             row += 1
             for b in xrange(a+1, K):
                 # Vdotgg := vec(V_{ab})^t . vec(gg)
                 #        = s_{ab}^2 ( gg_{aa} + gg_{bb} - gg_{ab} - gg_{ba})
                 Vdotgg = si2[a,b]*(gg[a,a] + gg[b,b] - gg[a,b] - gg[b,a])
-                Bm[row, offset+i] = -d2s[row]*Vdotgg
+                Bm[row, offset+i] = Vdotgg
                 row += 1
 
     # Coefficient for y
@@ -451,7 +463,7 @@ def Aopt_KKT_solver( si2, W):
     row = 0
     for a in xrange(K):
         for b in xrange(a, K):
-            Bm[row, ypos] = -d2s[row]
+            Bm[row, ypos] = 1.
             row += 1
 
     ###
@@ -486,15 +498,29 @@ def Aopt_KKT_solver( si2, W):
     # print Bm[:,:Bm.size[0]/2]
     # print Bm[:,Bm.size[0]/2:]
 
+    Bm0 = matrix( 0., Bm.size)
+    blas.copy( Bm, Bm0)
+
     # TODO: More numerically robust solutions!
     # LU factorization of Bm
-    ipiv = matrix( 0, Bm.size)
-    lapack.getrf( Bm, ipiv)
+    # lapack.getrf( Bm, ipiv)
+    # lapack.sytrf( Bm, ipiv)
+    Am = Bm[:-1,:-1]
+    ipiv = matrix( 0, Am.size)
+    lapack.sytrf( Am, ipiv)
+
+    # oz := (1, ..., 1, 0, ..., 0)' with K*(K+1)/2 ones and K zeros
+    oz = matrix( 0., (Am.size[0], 1))
+    oz[:K*(K+1)/2] = 1.
+    # iB1 := B^{-1} oz
+    iB1 = matrix( oz[:], oz.size)
+    lapack.sytrs( Am, ipiv, iB1)
 
     # print Bm
 
     # Compare with the default KKT solver.
-    if (False):
+    TEST_KKT = False
+    if (TEST_KKT):
         G, h, A = Aopt_GhA( si2)
         dims = dict( l = K*(K+1)/2,
                      q = [],
@@ -514,7 +540,7 @@ def Aopt_KKT_solver( si2, W):
             print y
             print z
 
-        if (False):
+        if (TEST_KKT):
             x0 = matrix( 0., x.size)
             y0 = matrix( 0., y.size)
             z0 = matrix( 0., z.size)
@@ -532,57 +558,52 @@ def Aopt_KKT_solver( si2, W):
             default_solver( xp, yp, zp)
             offset = K*(K+1)/2
             for i in xrange(K):
-                for a in xrange(K+1):
-                    for b in xrange(a+1, K+1):
-                        zp[offset+b*(K+1)+a] = zp[offset+a*(K+1)+b]
+                symmetrize_matrix( zp, K+1, offset)
                 offset += (K+1)*(K+1)
 
         pab = x[:K*(K+1)/2]  # p_{ab}  1<=a<=b<=K
         pis = x[K*(K+1)/2:]  # \pi_i   1<=i<=K
-        
-        lab = z[:K*(K+1)/2]   # l_{ab}  1<=a<=b<=K
-        lmats = z[K*(K+1)/2:] # \mat{l}_i, each a (K+1)x(K+1) matrix, 1<=i<=K
 
-        # lmats[i*(K+1)*(K+1):(i+1)*(K+1)*(K+1)] = R_i \mat{l}_i R_i = vec(L_i)
-        offset = K*(K+1)/2
-        for i in xrange(K):
-            start, end = i*(K+1)*(K+1), (i+1)*(K+1)*(K+1)
-            Ri = Ris[i]
-            # symmetrize lmats!
-            for a in xrange(K+1):
-                for b in xrange(a+1, K+1):
-                    lmats[start+b*(K+1)+a] = lmats[start+a*(K+1)+b]
-                    z[offset+start+b*(K+1)+a] = z[offset+start+a*(K+1)+b]
-            lmats[start:end] = cngrnc( Ri, lmats[start:end], K+1)[:]
+        # z_{ab} := d_{ab}^{-1} z_{ab}
+        # \mat{z}_i = r_i^{-1} \mat{z}_i r_i^{-t}
+        misc.scale( z, W, trans='T', inverse='I')
+
+        l = z[:]
+
+        # l_{ab} := d_{ab}^{-2} z_{ab}
+        # \mat{z}_i := r_i^{-t}r_i^{-1} \mat{z}_i r_i^{-t} r_i^{-1}
+        misc.scale( l, W, trans='N', inverse='I')
+
         Cv = np.zeros( nvars)
 
         # The RHS of equations
         # 
-        # -n_{ab} - d_{ab}^2 vec(V_{ab})^t . vec( \sum_i R_i* F R_i*) 
-        # + \sum_i d_{ab}^2 vec(V_{ab})^t . vec( g_i g_i^t) u_i - d_{ab}^2 y 
-        # = l_{ab} - d_{ab}^2 ( p_{ab} - vec(V_{ab})^t . vec(\sum_i L_i*)
+        # d_{ab}^{-2}n_{ab} + vec(V_{ab})^t . vec( \sum_i R_i* F R_i*) 
+        # + \sum_i vec(V_{ab})^t . vec( g_i g_i^t) u_i + y 
+        # = -d_{ab}^{-2} l_{ab} + ( p_{ab} - vec(V_{ab})^t . vec(\sum_i L_i*)
         # 
         ###
 
         # Lsum := \sum_i L_i
-        Lsum = np.sum( np.array(lmats).reshape( (K, (K+1)*(K+1))), axis=0)
+        moffset = K*(K+1)/2
+        Lsum = np.sum( np.array(l[moffset:]).reshape( (K, (K+1)*(K+1))), axis=0)
         Lsum = matrix( Lsum, (K+1, K+1))
         Ls = Lsum[:K,:K]
         
         row = 0
         for a in xrange(K):
-            Cv[row] = lab[row] - d2s[row]*(pab[row] - si2[a,a]*Ls[a,a])
+            Cv[row] = (pab[row] - si2[a,a]*Ls[a,a]) - l[row]
             row += 1
             for b in xrange(a+1, K):
-                Cv[row] = lab[row] - d2s[row]*(
-                    pab[row] - si2[a,b]*(Ls[a,a] + Ls[b,b] - Ls[a,b] - Ls[b,a]))
+                Cv[row] = -l[row] + \
+                (pab[row] - si2[a,b]*(Ls[a,a] + Ls[b,b] - 2*Ls[b,a]))
                 row += 1
         
         # The RHS of equations
         # g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
         assert(K*(K+1)/2 == row)
         for i in xrange(K):
-            Cv[row] = pis[i] - lmats[(i+1)*(K+1)*(K+1)-1]
+            Cv[row] = pis[i] - l[moffset+(i+1)*(K+1)*(K+1)-1]
             row += 1
 
         ###
@@ -592,19 +613,30 @@ def Aopt_KKT_solver( si2, W):
         Cv[row] = y[0]
         row += 1
 
+        x[:] = Cv[:-1]
+
+        # x := B^{-1} Cv
+        lapack.sytrs( Am, ipiv, x)
+        
+        # y := (oz'.B^{-1}.Cv[:-1] - y)/(oz'.B^{-1}.oz)
+        y[0] = (blas.dotu( oz, x) - y[0])/blas.dotu( oz, iB1)
+        # x := B^{-1} Cv - B^{-1}.oz y
+        blas.axpy( iB1, x, -y[0])
+
         # print Cv
         # Solving B (n; u; y; z)^t = C
-        Cv = matrix( Cv, (row, 1))
-        lapack.getrs( Bm, ipiv, Cv)    
+        # lapack.getrs( Bm, ipiv, Cv)    
+        # lapack.sytrs( Bm, ipiv, Cv)
         
-        x[:] = Cv[:K*(K+1)/2+K]
-        y[:] = Cv[K*(K+1)/2+K]
+        #x[:] = Cv[:K*(K+1)/2+K]
+        #y[:] = Cv[K*(K+1)/2+K]
         
         # Solve for -n_{ab} - d_{ab}^2 z_{ab} = l_{ab}
         # We need to return scaled d*z.
-        # z := -d_{ab} d_{ab}^{-2}(n_{ab} + l_{ab})
-        #    = -d_{ab}^{-1}(n_{ab} + l_{ab})
-        z[:K*(K+1)/2] = cvxopt.mul( -dis, x[:K*(K+1)/2] + lab)
+        # z := d_{ab} d_{ab}^{-2}(n_{ab} + l_{ab})
+        #    = d_{ab}^{-1}n_{ab} + d_{ab}^{-1}l_{ab}
+        z[:K*(K+1)/2] += cvxopt.mul( dis, x[:K*(K+1)/2])
+        z[:K*(K+1)/2] *= -1.
 
         #print x
         #print y
@@ -613,7 +645,7 @@ def Aopt_KKT_solver( si2, W):
         # Solve for \mat{z}_i = -R_i (\mat{l}_i + diag(F, u_i)) R_i
         #                     = -L_i - R_i diag(F, u_i) R_i
         # We return 
-        # r_i^t \mat{z}_i r_i = -r_i^t L_i r_i - r_i^{-1} diag(F, u_i) r_i^{-t} 
+        # r_i^t \mat{z}_i r_i = -r_i^{-1} (\mat{l}_i +  diag(F, u_i)) r_i^{-t} 
         ui = x[-K:]
         nab = tri2symm( x, K)
 
@@ -624,28 +656,22 @@ def Aopt_KKT_solver( si2, W):
             Fu = matrix( 0.0, (K+1, K+1))
             Fu[:K,:K] = F
             Fu[K,K] = ui[i]
-            lmats[start:end] = -cngrnc( rtis[i], z[offset+start:offset+end], K+1)[:]
-            Fu = cngrnc( rtis[i], Fu, K+1)
-            lmats[start:end] -= Fu[:]
-        z[K*(K+1)/2:] = lmats
+            Fu = matrix( Fu, ((K+1)*(K+1), 1))
+            # Fu := -r_i^{-1} diag( F, u_i) r_i^{-t} 
+            cngrnc( rtis[i], Fu, K+1, alpha=-1.)
+            # Fu := -r_i^{-1} (\mat{l}_i + diag( F, u_i )) r_i^{-t}
+            blas.axpy( z[offset+start:offset+end], Fu, alpha=-1.)
+            z[offset+start:offset+end] = Fu
 
-        if (False):
+        if (TEST_KKT):
+            offset = K*(K+1)/2
+            for i in xrange(K):
+                symmetrize_matrix( z, K+1, offset)
+                offset += (K+1)*(K+1)
             dz = np.max(np.abs(z - zp))
             dx = np.max(np.abs(x - xp))
             dy = np.max(np.abs(y - yp))
-            tol = 1e-8
-            if dx > tol or dy > tol or dz > tol:
-                for i, (r, rti) in enumerate( zip(ris, rtis)):
-                    print 'r[%d]=' % i
-                    print r
-                    print 'rti[%d]=' % i
-                    print rti
-                    print 'rti.T*r='
-                    print rti.T*r
-                print 'x0, y0, z0='
-                print x0
-                print y0
-                print z0
+            tol = 1e-5
             if dx > tol:
                 print 'dx='
                 print dx
@@ -661,6 +687,26 @@ def Aopt_KKT_solver( si2, W):
                 print dz
                 print z
                 print zp
+            if dx > tol or dy > tol or dz > tol:
+                for i, (r, rti) in enumerate( zip(ris, rtis)):
+                    print 'r[%d]=' % i
+                    print r
+                    print 'rti[%d]=' % i
+                    print rti
+                    print 'rti.T*r='
+                    print rti.T*r
+                for i, d in enumerate( ds):
+                    print 'd[%d]=%g' % (i, d)
+                print 'x0, y0, z0='
+                print x0
+                print y0
+                print z0
+                print Bm0
+                import pdb
+                pdb.set_trace()
+            #x[:] = xp[:]
+            #y[:] = yp[:]
+            #z[:] = zp[:]
 
     ###
     #  END of kkt_solver.
@@ -845,15 +891,15 @@ def A_optimize_fast( sij, N=1., nsofar=None):
     bv = matrix( float(N), (1, 1))
 
     def default_kkt_solver( W):
-        return kkt_ldl( Gm, dims, Am)(W)
+        return misc.kkt_ldl( Gm, dims, Am)(W)
 
     sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
                           options=dict(maxiters=50,
 #                                       abstol=1e-3,
 #                                       reltol=1e-3,
                                        feastol=1e-6),
-                          #kktsolver=default_kkt_solver)
-                          kktsolver=lambda W: Aopt_KKT_solver( si2, W))
+#                          kktsolver=default_kkt_solver)
+                           kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
     return solution_to_nij( sol['x'], K)
   
@@ -869,11 +915,13 @@ def test_congruence():
     congruence_matrix( r, W)
     
     y = r.T * x * r
-    # y2 = cngrnc( r, x[:], r.size[0])
+    y2 = x[:]
+    cngrnc( r, y2, r.size[0])
     yp = matrix( 0.0, (len(y[:]), 1))
     blas.gemv( W, x[:], yp)
 
     print yp - y[:]
+    print yp - y2[:]
 
 def test_kkt_solver( ntrials=100, tol=1e-6):
     sij = matrix( [[ 1., 0.1, 0.2, 0.5],
@@ -916,7 +964,9 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
                     p+=1
             offset += (K+1)*(K+1)
         
-        ds = matrix( np.random.rand( K*(K+1)/2), (K*(K+1)/2, 1))
+        ds = matrix( 10*np.random.rand( K*(K+1)/2), (K*(K+1)/2, 1))
+        ds[0] = 1e-6
+        ds[1:] = 1e6
         rs = [ matrix(np.random.rand( (K+1)*(K+1)) - 0.3, (K+1, K+1)) 
                for i in xrange(K) ]
         #rs = [ matrix( np.diag( np.random.rand(K+1)), (K+1, K+1))
@@ -943,9 +993,8 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
         dy = yp - y
         offset = K*(K+1)/2
         for i in xrange(K):
-            for a in xrange(K+1):
-                for b in xrange(a+1, K+1):
-                    z[offset + b*(K+1) + a] = z[offset + a*(K+1) + b]
+            symmetrize_matrix( zp, K+1, offset)
+            symmetrize_matrix( z, K+1, offset)
             offset += (K+1)*(K+1)
         dz = zp - z
         
@@ -959,7 +1008,7 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
             import pdb
             pdb.set_trace()
 
-def test_Gfunc( tol=1e-10):
+def test_Gfunc( ntrials=100, tol=1e-10):
     K = 5
     sij = matrix( np.random.rand( K*K), (K, K))
     sij = 0.5*(sij.T + sij)
@@ -968,60 +1017,68 @@ def test_Gfunc( tol=1e-10):
     beta = 0.25
     G, h, A = Aopt_GhA( si2)
 
-    trans = 'N'
-    nx = K*(K+1)/2+K
-    ny = K*(K+1)/2+K*(K+1)*(K+1)
-    x = matrix( np.random.rand( nx), (nx, 1))
-    y = matrix( np.random.rand( ny), (ny, 1))
-
-    yp = y[:]
-    Aopt_Gfunc( si2, x, y, alpha, beta, trans)
-    yp = alpha*G*x + beta*yp
-
-    dy = np.max(np.abs(y - yp))
-    if (dy > tol):
-        print 'G function fails for trans=N: dy=%g' % dy
-    else:
-        print 'G function succeeds for trans=N: dy=%g' % dy
-
-    trans = 'T'
-    nx = K*(K+1)/2 + K*(K+1)*(K+1)
-    ny = K*(K+1)/2 + K
-    x = matrix( np.random.rand( nx), (nx, 1))
-    y = matrix( np.random.rand( ny), (ny, 1))
+    for i in xrange( ntrials):
+        trans = 'N'
+        nx = K*(K+1)/2+K
+        ny = K*(K+1)/2+K*(K+1)*(K+1)
+        x = matrix( np.random.rand( nx), (nx, 1))
+        y = matrix( 1.e6*np.random.rand( ny), (ny, 1))
+        
+        yp = y[:]
+        Aopt_Gfunc( si2, x, y, alpha, beta, trans)
+        blas.gemv( matrix(G), x, yp, 'N', alpha, beta)
+        
+        dy = np.max(np.abs(y - yp))
+        if (dy > tol):
+            print 'G function fails for trans=N: dy=%g' % dy
+        else:
+            print 'G function succeeds for trans=N: dy=%g' % dy
+            
+        trans = 'T'
+        nx = K*(K+1)/2 + K*(K+1)*(K+1)
+        ny = K*(K+1)/2 + K
+        x = matrix( np.random.rand( nx), (nx, 1))
+        y = matrix( 1.e6*np.random.rand( ny), (ny, 1))
+        
+        for i in xrange(K):
+            start = K*(K+1)/2 + i*(K+1)*(K+1)
+            for a in xrange(K+1):
+                for b in xrange(a+1, K+1):
+                    x[start+a*(K+1)+b] = x[start+b*(K+1)+a]
     
-    for i in xrange(K):
-        start = K*(K+1)/2 + i*(K+1)*(K+1)
-        for a in xrange(K+1):
-            for b in xrange(a+1, K+1):
-                x[start+a*(K+1)+b] = x[start+b*(K+1)+a]
-    
-    yp = y[:]
-    Aopt_Gfunc( si2, x, y, alpha, beta, trans)
-    yp = alpha*G.T*x + beta*yp
+        yp = y[:]
+        Aopt_Gfunc( si2, x, y, alpha, beta, trans)
+        blas.gemv( matrix(G), x, yp, 'T', alpha, beta)
 
-    dy = np.max(np.abs(y - yp))
-    if (dy > tol):
-        print 'G function fails for trans=T: dy=%g' % dy
-    else:
-        print 'G function succeeds for trans=T: dy=%g' % dy
+        dy = np.max(np.abs(y - yp))
+        if (dy > tol):
+            print 'G function fails for trans=T: dy=%g' % dy
+        else:
+            print 'G function succeeds for trans=T: dy=%g' % dy
 
 if __name__ == '__main__':
+    np.random.seed( 3)
     # test_congruence()
     # test_Gfunc()
 
     # test_kkt_solver(ntrials=100)
 
+    # import sys
+    # sys.exit()
     sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
                    [ 0.1, 1.1, 0.3, 0.2],
                    [ 0.2, 0.3, 1.2, 0.1],
                    [ 0.5, 0.2, 0.1, 0.9]])
     # sij = sij[:2,:2]
     #sij = matrix( [[1., 1], [1, 1.1]])
-    K = 40
+    K = 20
     sij = matrix( np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
     nij = A_optimize_fast( sij)
     nij0 = A_optimize( sij)
     print nij0
+    print np.sum( nij0) + np.sum( np.diag( nij0))
     print nij
+    print np.sum( nij) + np.sum( np.diag( nij))
+
+    print 'dn=', np.max(np.abs( nij0 - nij))
