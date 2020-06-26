@@ -1,7 +1,7 @@
 import numpy as np
 import cvxopt
 from cvxopt import blas, lapack, solvers, matrix, spmatrix, misc
-from diffnet import A_optimize
+from diffnet import A_optimize, update_A_optimal
 
 def upper_index( i, j, K):
     '''
@@ -46,6 +46,20 @@ def cngrnc(r, x, n, xstart=0, alpha = 1.0):
     # x := alpha*(a*r' + r*a')
     blas.syr2k(r, a, tx, trans = 'T', alpha = alpha)
     x[xstart:xend] = tx[:]
+
+def pairwise_diff( x, y, n):
+    '''Compute pairwise difference x[:,i] - x[:,j] and store in y[:,k],
+    where k is the index of (i,j) in the array (0,0), (0,1), ...,
+    (1,1), ..., (k-1,k-1). y[:,(i,i)] = x[:,i]
+
+    '''
+    k = 0
+    for i in xrange(n):
+        y[:,k] = x[:,i]
+        k+=1
+        for j in xrange(i+1, n):
+            y[:,k] = x[:,i] - x[:,j]
+            k+=1
 
 def congruence_matrix( r, W, offset=0):
     '''
@@ -365,34 +379,37 @@ def Aopt_KKT_solver( si2, W):
     for i in xrange(K):
         blas.gemm( rtis[i], rtis[i], Ris[i], transB = 'T')
 
-    # Compute matrices 
-    # RVR[(a,b)] := \sum_i R*_i V_{ab} R*_i 
-    #   =  { s_{aa}^{-2} \sum_i R*_{i,a} R*_{i,a}^t  if a=b
-    #      { s_{ab}^{-2} \sum_i ( R*_{i,a} R*_{i,a}^t + R*_{i,b} R*_{i,b}^t
-    #                           - R*_{i,a} R*_{i,b}^t - R*_{i,b} R*_{i,a}^t )
-    #        if a != b
+    # The coefficient for n_{ab} in the row (i,j) is given by
+    #    R_{ai}^2 if a=b and i=j
+    #    (R_{ai} - R_{bi})^2  if a!=b and i=j
+    #    (R_{ai} - R_{aj})^2  if a=b and i!=j
+    #    (R_{ai} + R_{bj} - R_{bi} - R_{aj})^2  if a!=b and i!=j
+    #  * s_{ab}^{-2} * s_{ij}^{-2}
+    ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+    for i in xrange(K):
+        Ri = Ris[i]
+        # dR[:(a,b)] = R[:,a] - R[:,b]
+        dR = matrix( 0., (K, K*(K+1)/2))
+        pairwise_diff( Ri[:K,:K], dR, K)
+        # ddR[:(ap,bp)] = dR'[:,ap] - dR'[:,bp]
+        ddR = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+        pairwise_diff( dR.T, ddR, K)
+        ddR2 += ddR**2
 
-    RRabs = [ matrix(0.0, (K, K)) for i in xrange(K*(K+1)/2) ]
-    for a in xrange( K):
-        for b in xrange( a, K):
-            for i in xrange( K):
-                Ri = Ris[i][:K,:K]
-                blas.geru( Ri[:,a], Ri[:,b], RRabs[upper_index(a, b, K)])
-    RVRs = np.zeros( (K*(K+1)/2, K, K))
-    row = 0
-    for a in xrange( K):
-        RRaa = RRabs[upper_index( a, a, K)]
-        RVRs[row,:,:] = si2[a,a]*RRaa
-        row += 1
-        for b in xrange( a+1, K):
-            RRbb = RRabs[upper_index( b, b, K)]
-            RRab = RRabs[upper_index( a, b, K)]
-            RRba = RRab.T
-            RVRs[row,:,:] = si2[a,b]*(RRaa + RRbb - RRab - RRba)
-            row += 1
+    # upper triangular representation si2ab[(a,b)] := si2[a,b]
+    si2ab = matrix( 0., (K*(K+1)/2, 1))
+    p = 0
+    for i in xrange(K):
+        si2ab[p:p+(K-i)] = si2[i:,i]
+        p += (K-i)
+
+    si2q = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+    blas.syr( si2ab, si2q)
+    
+    sRVR = cvxopt.mul( si2q, ddR2)
 
     #  We first solve for K(K+1)/2 n_{ab}, K u_i, 1 y
-    nvars = K*(K+1)/2 + K + 1 
+    nvars = K*(K+1)/2 + K # + 1  We solve y by elimination of n and u.
     Bm = matrix( 0.0, (nvars, nvars))
 
     # The LHS matrix of equations
@@ -403,29 +420,7 @@ def Aopt_KKT_solver( si2, W):
     # 
 
     # Coefficients for n_{ab}
-    apbp = 0
-    for ap in xrange(K):
-        for bp in xrange(ap, K):
-            # RVR := \sum_i R*_i V_{ap,bp} R*_i
-            RVR = RVRs[apbp,:,:]
-            row = 0
-            for a in xrange(K):
-                # VdotRVR := vec(V_{aa})^t . vec( RVR)
-                #          = s_{aa}^{-2}*RVR_{aa}
-                VdotRVR = si2[a,a]*RVR[a,a]
-                # vec(V_{aa})^t . vec(\sum_i R*_i V_{ap,bp} R*_i) n_{ap,bp}
-                Bm[row, apbp] = VdotRVR
-                row += 1
-                for b in xrange(a+1, K):
-                    # VdotRVR := vec(V_{ab})^t . vec( RVR)
-                    #          = s_{ab}^{-2}*( RVR_{aa} + RVR_{bb} 
-                    #                         - RVR_{ab} - RVR_{ba})
-                    VdotRVR = si2[a,b]*(RVR[a,a]+RVR[b,b] - RVR[a,b]-RVR[b,a])
-                    # vec(V_{ab})^t . vec(\sum_i R*_i V_{ap,bp} R*_i) n_{ap,bp}
-                    Bm[row, apbp] = VdotRVR
-                    row += 1
-            apbp += 1
-    assert(K*(K+1)/2 == row)
+    Bm[:K*(K+1)/2,:K*(K+1)/2] = cvxopt.mul( si2q, ddR2)
 
     row = 0
     for a in xrange(K):
@@ -435,97 +430,50 @@ def Aopt_KKT_solver( si2, W):
     assert(K*(K+1)/2 == row)
 
     # Coefficients for u_i
-    offset = K*(K+1)/2
+
+    # The LHS of equations
+    # g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
+    dg = matrix( 0., (K, K*(K+1)/2))
+    g = matrix( 0., (K, K))
     for i in xrange(K):
-        #  R_i = ( R*_i      g_i       )
-        #        ( g_i^t R_{i,K+1,K+1} )
-        gi = Ris[i][K,:K] 
-        gg = matrix( 0.0, (K, K))
-        # gg := g_i g_i^t
-        blas.geru( gi, gi, gg)
-        
-        row = 0
-        for a in xrange(K):
-            # Vdotgg := vec(V_{aa})^t . vec(gg)
-            #        = {  s_{aa}^2 gg_{aa}
-            Vdotgg = si2[a,a]*gg[a,a]
-            Bm[row, offset+i] = Vdotgg
-            row += 1
-            for b in xrange(a+1, K):
-                # Vdotgg := vec(V_{ab})^t . vec(gg)
-                #        = s_{ab}^2 ( gg_{aa} + gg_{bb} - gg_{ab} - gg_{ba})
-                Vdotgg = si2[a,b]*(gg[a,a] + gg[b,b] - gg[a,b] - gg[b,a])
-                Bm[row, offset+i] = Vdotgg
-                row += 1
+        g[i,:] = Ris[i][K,:K]
+    # dg[:,(a,b)] = g[a] - g[b] if a!=b else g[a]
+    pairwise_diff( g, dg, K)
+    dg2 = dg**2
+    # dg2 := s[(a,b)]^{-2} dg[(a,b)]^2
+    for i in xrange( K):
+        dg2[i,:] = cvxopt.mul( si2ab.T, dg2[i,:])
 
-    # Coefficient for y
-    ypos = K*(K+1)/2 + K
-    row = 0
-    for a in xrange(K):
-        for b in xrange(a, K):
-            Bm[row, ypos] = 1.
-            row += 1
-
-    ###
-    #  The LHS matrix of the equations
-    #  g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
-    #  
+    Bm[K*(K+1)/2:K*(K+1)/2+K,:-K] = dg2
+    # Diagonal coefficients for u_i.
     uoffset = K*(K+1)/2
-    assert(K*(K+1)/2 == row)
     for i in xrange(K):
-        gi = Ris[i][K,:K]
         RiKK = Ris[i][K,K]
-        R2 = RiKK*RiKK
-        ab = 0
-        for a in xrange(K):
-            Bm[row, ab] = si2[a,a]*gi[a]*gi[a] 
-            ab += 1
-            for b in xrange(a+1,K):
-                # gVg := g^t V_{ab} g
-                #     = s_{ab}^{-2}*(g_a^2 + g_b^2 - 2 g_a g_b)
-                gVg = gi[a]*gi[a] + gi[b]*gi[b] - 2*gi[a]*gi[b]
-                Bm[row, ab] = si2[a,b]*gVg
-                ab += 1
-        Bm[row, uoffset+i] = R2
-        row += 1
-
-    ###
-    #  The LHS coefficients of the equation
-    #  \sum_{ab} n_{ab} = q
-    assert(K*(K+1)/2 + K == row)
-    Bm[row,:K*(K+1)/2] = 1.
-
-    # print Bm[:,:Bm.size[0]/2]
-    # print Bm[:,Bm.size[0]/2:]
-
-    Bm0 = matrix( 0., Bm.size)
-    blas.copy( Bm, Bm0)
-
-    # TODO: More numerically robust solutions!
-    # LU factorization of Bm
-    # lapack.getrf( Bm, ipiv)
-    # lapack.sytrf( Bm, ipiv)
-    Am = Bm[:-1,:-1]
-    ipiv = matrix( 0, Am.size)
-    lapack.sytrf( Am, ipiv)
-
-    # oz := (1, ..., 1, 0, ..., 0)' with K*(K+1)/2 ones and K zeros
-    oz = matrix( 0., (Am.size[0], 1))
-    oz[:K*(K+1)/2] = 1.
-    # iB1 := B^{-1} oz
-    iB1 = matrix( oz[:], oz.size)
-    lapack.sytrs( Am, ipiv, iB1)
-
-    # print Bm
+        Bm[uoffset+i,uoffset+i] = RiKK**2
 
     # Compare with the default KKT solver.
     TEST_KKT = False
     if (TEST_KKT):
+        Bm0 = matrix( 0., Bm.size)
+        blas.copy( Bm, Bm0)
         G, h, A = Aopt_GhA( si2)
         dims = dict( l = K*(K+1)/2,
                      q = [],
                      s = [K+1]*K )
         default_solver = misc.kkt_ldl( G, dims, A)(W)
+
+    ipiv = matrix( 0, Bm.size)
+    lapack.sytrf( Bm, ipiv)
+    # TODO: IS THIS A POSITIVE DEFINITE MATRIX?
+    # lapack.potrf( Bm)
+
+    # oz := (1, ..., 1, 0, ..., 0)' with K*(K+1)/2 ones and K zeros
+    oz = matrix( 0., (Bm.size[0], 1))
+    oz[:K*(K+1)/2] = 1.
+    # iB1 := B^{-1} oz
+    iB1 = matrix( oz[:], oz.size)
+    lapack.sytrs( Bm, ipiv, iB1)
+    # lapack.potrs( Bm, iB1)
 
     #######
     # 
@@ -534,12 +482,6 @@ def Aopt_KKT_solver( si2, W):
     #######
     def kkt_solver( x, y, z):
         
-        if (False):
-            print 'x0,y0,z0='
-            print x
-            print y
-            print z
-
         if (TEST_KKT):
             x0 = matrix( 0., x.size)
             y0 = matrix( 0., y.size)
@@ -561,8 +503,8 @@ def Aopt_KKT_solver( si2, W):
                 symmetrize_matrix( zp, K+1, offset)
                 offset += (K+1)*(K+1)
 
-        pab = x[:K*(K+1)/2]  # p_{ab}  1<=a<=b<=K
-        pis = x[K*(K+1)/2:]  # \pi_i   1<=i<=K
+        # pab = x[:K*(K+1)/2]  # p_{ab}  1<=a<=b<=K
+        # pis = x[K*(K+1)/2:]  # \pi_i   1<=i<=K
 
         # z_{ab} := d_{ab}^{-1} z_{ab}
         # \mat{z}_i = r_i^{-1} \mat{z}_i r_i^{-t}
@@ -573,8 +515,6 @@ def Aopt_KKT_solver( si2, W):
         # l_{ab} := d_{ab}^{-2} z_{ab}
         # \mat{z}_i := r_i^{-t}r_i^{-1} \mat{z}_i r_i^{-t} r_i^{-1}
         misc.scale( l, W, trans='N', inverse='I')
-
-        Cv = np.zeros( nvars)
 
         # The RHS of equations
         # 
@@ -590,57 +530,38 @@ def Aopt_KKT_solver( si2, W):
         Lsum = matrix( Lsum, (K+1, K+1))
         Ls = Lsum[:K,:K]
         
-        row = 0
+        x[:K*(K+1)/2] -= l[:K*(K+1)/2]
+
+        dL = matrix( 0., (K*(K+1)/2, 1))
+        ab = 0
         for a in xrange(K):
-            Cv[row] = (pab[row] - si2[a,a]*Ls[a,a]) - l[row]
-            row += 1
-            for b in xrange(a+1, K):
-                Cv[row] = -l[row] + \
-                (pab[row] - si2[a,b]*(Ls[a,a] + Ls[b,b] - 2*Ls[b,a]))
-                row += 1
-        
+            dL[ab] = Ls[a,a]
+            ab += 1
+            for b in xrange(a+1,K):
+                dL[ab] = Ls[a,a] + Ls[b,b] - 2*Ls[b,a]
+                ab += 1
+
+        x[:K*(K+1)/2] -= cvxopt.mul( si2ab, dL)
+
         # The RHS of equations
         # g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
-        assert(K*(K+1)/2 == row)
-        for i in xrange(K):
-            Cv[row] = pis[i] - l[moffset+(i+1)*(K+1)*(K+1)-1]
-            row += 1
-
-        ###
-        #  The RHS of the equation
-        #  \sum_{ab} n_{ab} = q
-        assert(K*(K+1)/2 + K==row)
-        Cv[row] = y[0]
-        row += 1
-
-        x[:] = Cv[:-1]
+        x[K*(K+1)/2:] -= l[K*(K+1)/2+(K+1)*(K+1)-1::(K+1)*(K+1)]
 
         # x := B^{-1} Cv
-        lapack.sytrs( Am, ipiv, x)
-        
+        lapack.sytrs( Bm, ipiv, x)
+        # lapack.potrs( Bm, x)
+
         # y := (oz'.B^{-1}.Cv[:-1] - y)/(oz'.B^{-1}.oz)
         y[0] = (blas.dotu( oz, x) - y[0])/blas.dotu( oz, iB1)
         # x := B^{-1} Cv - B^{-1}.oz y
         blas.axpy( iB1, x, -y[0])
 
-        # print Cv
-        # Solving B (n; u; y; z)^t = C
-        # lapack.getrs( Bm, ipiv, Cv)    
-        # lapack.sytrs( Bm, ipiv, Cv)
-        
-        #x[:] = Cv[:K*(K+1)/2+K]
-        #y[:] = Cv[K*(K+1)/2+K]
-        
         # Solve for -n_{ab} - d_{ab}^2 z_{ab} = l_{ab}
         # We need to return scaled d*z.
         # z := d_{ab} d_{ab}^{-2}(n_{ab} + l_{ab})
         #    = d_{ab}^{-1}n_{ab} + d_{ab}^{-1}l_{ab}
         z[:K*(K+1)/2] += cvxopt.mul( dis, x[:K*(K+1)/2])
         z[:K*(K+1)/2] *= -1.
-
-        #print x
-        #print y
-        #print z
 
         # Solve for \mat{z}_i = -R_i (\mat{l}_i + diag(F, u_i)) R_i
         #                     = -L_i - R_i diag(F, u_i) R_i
@@ -704,9 +625,6 @@ def Aopt_KKT_solver( si2, W):
                 print Bm0
                 import pdb
                 pdb.set_trace()
-            #x[:] = xp[:]
-            #y[:] = yp[:]
-            #z[:] = zp[:]
 
     ###
     #  END of kkt_solver.
@@ -897,7 +815,7 @@ def A_optimize_fast( sij, N=1., nsofar=None):
                           options=dict(maxiters=50,
 #                                       abstol=1e-3,
 #                                       reltol=1e-3,
-                                       feastol=1e-6),
+                                       feastol=1e-7),
 #                          kktsolver=default_kkt_solver)
                            kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
@@ -930,9 +848,10 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
                    [ 0.5, 0.2, 0.1, 0.9]])
     K = 2
     sij = matrix( np.random.rand( K*K), (K, K))
+    # sij = matrix( np.ones( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
-
-    #sij = sij[:2,:2]
+ 
+   #sij = sij[:2,:2]
 
     si2 = cvxopt.div( 1., sij**2)
     G, h, A = Aopt_GhA( si2)
@@ -965,8 +884,8 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
             offset += (K+1)*(K+1)
         
         ds = matrix( 10*np.random.rand( K*(K+1)/2), (K*(K+1)/2, 1))
-        ds[0] = 1e-6
-        ds[1:] = 1e6
+        #ds[0] = 1e-6
+        #ds[1:] = 1e6
         rs = [ matrix(np.random.rand( (K+1)*(K+1)) - 0.3, (K+1, K+1)) 
                for i in xrange(K) ]
         #rs = [ matrix( np.diag( np.random.rand(K+1)), (K+1, K+1))
@@ -1057,14 +976,14 @@ def test_Gfunc( ntrials=100, tol=1e-10):
             print 'G function succeeds for trans=T: dy=%g' % dy
 
 if __name__ == '__main__':
-    np.random.seed( 3)
+    # np.random.seed( 11)
     # test_congruence()
     # test_Gfunc()
 
-    # test_kkt_solver(ntrials=100)
+    #test_kkt_solver(ntrials=100)
 
-    # import sys
-    # sys.exit()
+    #import sys
+    #sys.exit()
     sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
                    [ 0.1, 1.1, 0.3, 0.2],
                    [ 0.2, 0.3, 1.2, 0.1],
@@ -1073,9 +992,14 @@ if __name__ == '__main__':
     #sij = matrix( [[1., 1], [1, 1.1]])
     K = 20
     sij = matrix( np.random.rand( K*K), (K, K))
+    nsofar = matrix( 2.*np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
-    nij = A_optimize_fast( sij)
-    nij0 = A_optimize( sij)
+    nsofar = 0.5*(nsofar + nsofar.T)
+
+    N = 20.
+
+    nij = A_optimize_fast( sij, N, nsofar)
+    nij0 = update_A_optimal( sij, N, nsofar)
     print nij0
     print np.sum( nij0) + np.sum( np.diag( nij0))
     print nij
