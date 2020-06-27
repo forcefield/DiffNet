@@ -30,7 +30,6 @@ def cngrnc(r, x, n, xstart=0, alpha = 1.0):
     r is a square matrix, and x is a symmetric matrix.
     """
 
-    # TODO: use symmetry!
     # return alpha*r.T*matrix(x, (n,n))*r
     
     # Scale diagonal of x by 1/2.
@@ -85,223 +84,6 @@ def congruence_matrix( r, W, offset=0):
                     ab += 1
             ij += 1
     return W
-
-from cvxopt.misc_solvers import *
-def kkt_ldl(G, dims, A, mnl = 0, kktreg = None):
-    """
-    Solution of KKT equations by a dense LDL factorization of the 
-    3 x 3 system.
-    
-    Returns a function that (1) computes the LDL factorization of
-    
-        [ H           A'   GG'*W^{-1} ] 
-        [ A           0    0          ],
-        [ W^{-T}*GG   0   -I          ] 
-    
-    given H, Df, W, where GG = [Df; G], and (2) returns a function for 
-    solving 
-    
-        [ H     A'   GG'   ]   [ ux ]   [ bx ]
-        [ A     0    0     ] * [ uy ] = [ by ].
-        [ GG    0   -W'*W  ]   [ uz ]   [ bz ]
-    
-    H is n x n,  A is p x n, Df is mnl x n, G is N x n where
-    N = dims['l'] + sum(dims['q']) + sum( k**2 for k in dims['s'] ).
-    """
-    
-    p, n = A.size
-    ldK = n + p + mnl + dims['l'] + sum(dims['q']) + sum([ int(k*(k+1)/2)
-        for k in dims['s'] ])
-    K = matrix(0.0, (ldK, ldK))
-    ipiv = matrix(0, (ldK, 1))
-    u = matrix(0.0, (ldK, 1))
-    g = matrix(0.0, (mnl + G.size[0], 1))
-
-    def factor(W, H = None, Df = None):
-
-        blas.scal(0.0, K)
-        if H is not None: K[:n, :n] = H
-        K[n:n+p, :n] = A
-        for k in range(n):
-            if mnl: g[:mnl] = Df[:,k]
-            g[mnl:] = G[:,k]
-            scale(g, W, trans = 'T', inverse = 'I')
-            pack(g, K, dims, mnl, offsety = k*ldK + n + p)
-        K[(ldK+1)*(p+n) :: ldK+1]  = -1.0
-        if kktreg:
-            K[0 : (ldK+1)*n : ldK+1]  += kktreg  # Reg. term, 1x1 block (positive)
-            K[(ldK+1)*n :: ldK+1]  -= kktreg     # Reg. term, 2x2 block (negative)
-        lapack.sytrf(K, ipiv)
-
-        for i in xrange(len(W['r'])):
-            print 'r[%d]=' % i
-            print W['r'][i]
-
-        def solve(x, y, z):
-
-            # Solve
-            #
-            #     [ H          A'   GG'*W^{-1} ]   [ ux   ]   [ bx        ]
-            #     [ A          0    0          ] * [ uy   [ = [ by        ]
-            #     [ W^{-T}*GG  0   -I          ]   [ W*uz ]   [ W^{-T}*bz ]
-            #
-            # and return ux, uy, W*uz.
-            #
-            # On entry, x, y, z contain bx, by, bz.  On exit, they contain
-            # the solution ux, uy, W*uz.
-
-            print 'x0, y0, z0='
-            print x
-            print y
-            print z
-
-            blas.copy(x, u)
-            blas.copy(y, u, offsety = n)
-            scale(z, W, trans = 'T', inverse = 'I') 
-            pack(z, u, dims, mnl, offsety = n + p)
-            lapack.sytrs(K, ipiv, u)
-            blas.copy(u, x, n = n)
-            blas.copy(u, y, offsetx = n, n = p)
-            unpack(u, z, dims, mnl, offsetx = n + p)
-    
-            print 'x, y, z='
-            print x
-            print y
-            print z
-
-        return solve
-
-    return factor
-
-def Aopt_KKT_solver_naive( si2, W):
-    '''
-    Naive solution of the KKT equation, for debugging only.
-    '''
-    K = si2.size[0]
-    ds = W['d']
-    ris = W['r']
-
-    nz = K*(K+1)/2 + K*(K+1)*(K+1)
-    Wm = matrix( 0.0, (nz, nz))
-    for i in xrange( K*(K+1)/2):
-        Wm[i,i] = ds[i]
-
-    offset = K*(K+1)/2
-    for z in xrange(K):
-        r = ris[z]
-        congruence_matrix( r, Wm, offset)
-        offset += (K+1)*(K+1)
-    WtW = matrix( 0.0, Wm.size)
-    blas.gemm( Wm, Wm, WtW, transA='T')
-
-    for i in xrange(K):
-        print 'r[%d] = ' % i
-        print ris[i]
-    #print 'W='
-    #print Wm
-
-    G, h, A = Aopt_GhA( si2)
-    nvars = K*(K+1)/2 + K + 1 + K*(K+1)/2 + K*(K+1)*(K+1)
-    Bm = matrix( 0.0, (nvars, nvars))
-    Bm[:K*(K+1)/2+K, K*(K+1)/2+K] = A.T
-    Bm[:K*(K+1)/2+K, K*(K+1)/2+K+1:] = G.T
-    Bm[K*(K+1)/2+K,:K*(K+1)/2+K] = A
-    Bm[K*(K+1)/2+K+1:,:K*(K+1)/2+K] = G
-    Bm[K*(K+1)/2+K+1:,K*(K+1)/2+K+1:] = -WtW
-
-    #print 'G='
-    #print G
-
-    #print 'A='
-    #print A
-
-    #print 'Bm='
-    #print Bm
-
-    Bm0 = matrix( Bm[:], Bm.size)
-
-    Bmp = np.block( [
-        [np.zeros( (A.size[1], A.size[1])), np.array(A.T), np.array(matrix(G.T)) ],
-        [np.array(A), np.zeros((A.size[0], A.size[0])), np.zeros((A.size[0], G.size[0]))],
-        [np.array(matrix(G)), np.zeros((G.size[0], A.size[0])), np.array(-WtW) ] ])
-    
-    #print 'dBm = ', np.max( np.abs(Bmp - Bm0))
-
-    ipiv = matrix( 0, Bm.size)
-    lapack.sytrf( Bm, ipiv)
-
-    def kkt_solver( x, y, z):
-
-        print 'x0, y0, z0='
-        print x
-        print y
-        print z
-
-        lab = z[:K*(K+1)/2]
-
-        lmats = z[K*(K+1)/2:]
-        for k in xrange(K):
-            zp = matrix( lmats[k*(K+1)*(K+1):(k+1)*(K+1)*(K+1)], (K+1,K+1))
-            for i in xrange(K+1):
-                for j in xrange(i+1,K+1):
-                    zp[i,j] = zp[j,i]
-            lmats[k*(K+1)*(K+1):(k+1)*(K+1)*(K+1)] = zp[:]
-
-        print 'z0='
-        print lab
-        for i in xrange(K):
-            zmat = matrix( lmats[i*(K+1)*(K+1):(i+1)*(K+1)*(K+1)], (K+1,K+1))
-            print zmat
-
-        # Get the symmetric matrices 
-        z[K*(K+1)/2:] = lmats[:]
-
-        Cv = matrix( 0., (nvars, 1))
-        Cv[:len(x)] = x
-        Cv[len(x):len(x)+len(y)] = y
-        Cv[len(x)+len(y):] = z
-        lapack.sytrs( Bm, ipiv, Cv)
-
-        xyz = matrix( 0., (nvars, 1))
-        blas.gemv( Bm0, Cv, xyz)
-        
-        print 'dx, dy, dz=' 
-        print np.max( np.abs(xyz[:len(x)] - x))
-        print np.max( np.abs(xyz[len(x):len(x)+len(y)] - y))
-        print np.max( np.abs(xyz[len(x)+len(y):] - z))
-
-        x[:] = Cv[:len(x)]
-        y[:] = Cv[len(x):len(x)+len(y)]
-        zp = Cv[len(x)+len(y):]
-        z2 = matrix( 0., (len(z), 1))
-        blas.gemv( Wm, zp, z2)
-        
-        r = ris[0]
-        K1 = r.size[0]
-        offset = K*(K+1)/2
-        for i in xrange(K):
-            r = ris[i]
-            print 'r='
-            print r
-            z3 = matrix( zp[offset:offset+K1*K1], (K1,K1))
-            z4 = r.T * z3 * r
-            print 'rt.z[%d].r = ' % i
-            print z4
-            print matrix( z2[offset:offset+K1*K1], (K1,K1))
-
-            print 'rt.z.r - W.z =', np.max( np.abs(z4[:] - z2[offset:offset+K1*K1]))
-            offset += K1*K1
-
-        z[:] = z2
-        
-        print 'x,y,z='
-        print x
-        print y
-        print z
-        #import pdb
-        #pdb.set_trace()
-
-    return kkt_solver
 
 def symmetrize_matrix( x, n, xstart=0):
     '''
@@ -364,15 +146,6 @@ def Aopt_KKT_solver( si2, W):
 
     d2s = ds**2
     di2s = dis**2
-
-    # print 'd='
-    # print ds
-
-    # for rti in rtis: print rti
-    if (False):
-        for i, ri in enumerate(ris): 
-            print 'r[%d]=' % i
-            print ri
 
     # R_i = r_i^{-t}r_i^{-1} 
     Ris = [ matrix(0.0, (K+1, K+1)) for i in xrange(K) ]
@@ -748,11 +521,6 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
                              for t in xrange(K) ])
                 Gs.extend( [ (skip+j*(K+1) + i + t*(K+1)*(K+1), col, si2[i,j])
                              for t in xrange(K) ])
-                # offset = col*nrows + K*(K+1)/2
-                # Gs[offset+i*(K+2) : (col+1)*nrows : (K+1)*(K+1)] = -si2[i,j]
-                # Gs[offset+j*(K+2) : (col+1)*nrows : (K+1)*(K+1)] = -si2[i,j]
-                # Gs[offset+i*(K+1)+j : (col+1)*nrows : (K+1)*(K+1)] = si2[i,j]
-                # Gs[offset+j*(K+2)+i : (col+1)*nrows : (K+1)*(K+1)] = si2[i,j]
                 col += 1
         
         # vec( [ 0, 0; 0, 1 ])
@@ -798,8 +566,6 @@ def A_optimize_fast( sij, N=1., nsofar=None):
     K = si2.size[0]
 
     Gm, hv, Am = Aopt_GhA( si2, nsofar, G_as_function=True)
-    # print Gm
-    # print hv
     dims = dict( l = K*(K+1)/2,
                  q = [],
                  s = [K+1]*K )
@@ -812,47 +578,17 @@ def A_optimize_fast( sij, N=1., nsofar=None):
         return misc.kkt_ldl( Gm, dims, Am)(W)
 
     sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
-                          options=dict(maxiters=50,
-#                                       abstol=1e-3,
-#                                       reltol=1e-3,
-                                       feastol=1e-7),
-#                          kktsolver=default_kkt_solver)
+                          options=dict(maxiters=40,
+                                       feastol=1e-6),
                            kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
     return solution_to_nij( sol['x'], K)
   
-def test_congruence():
-    r = matrix( [ 1., 2., 3., 4., 5., 6., 7., 8., 9.], (3,3))
-    x = matrix( [ 0.5, 0.4, 0.3, 0.2, 0.1, 0.6, 0.7, 0.8, 0.9 ], (3,3))
-
-    # r = r[:2,:2]
-    # x = x[:2,:2]
-
-    K = r.size[0]
-    W = matrix( 0.0, (K*K, K*K))
-    congruence_matrix( r, W)
-    
-    y = r.T * x * r
-    y2 = x[:]
-    cngrnc( r, y2, r.size[0])
-    yp = matrix( 0.0, (len(y[:]), 1))
-    blas.gemv( W, x[:], yp)
-
-    print yp - y[:]
-    print yp - y2[:]
-
-def test_kkt_solver( ntrials=100, tol=1e-6):
-    sij = matrix( [[ 1., 0.1, 0.2, 0.5],
-                   [ 0.1, 2., 0.3, 0.2],
-                   [ 0.2, 0.3, 1.2, 0.1],
-                   [ 0.5, 0.2, 0.1, 0.9]])
-    K = 2
+def test_kkt_solver( ntrials=5, tol=1e-6):
+    K = 5
     sij = matrix( np.random.rand( K*K), (K, K))
-    # sij = matrix( np.ones( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
  
-   #sij = sij[:2,:2]
-
     si2 = cvxopt.div( 1., sij**2)
     G, h, A = Aopt_GhA( si2)
     K = si2.size[0]
@@ -884,14 +620,8 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
             offset += (K+1)*(K+1)
         
         ds = matrix( 10*np.random.rand( K*(K+1)/2), (K*(K+1)/2, 1))
-        #ds[0] = 1e-6
-        #ds[1:] = 1e6
         rs = [ matrix(np.random.rand( (K+1)*(K+1)) - 0.3, (K+1, K+1)) 
                for i in xrange(K) ]
-        #rs = [ matrix( np.diag( np.random.rand(K+1)), (K+1, K+1))
-        #       for i in xrange(K) ]
-        #rs = [ matrix( np.diag( np.ones( K+1)), (K+1, K+1))
-        #       for i in xrange(K) ]
         W = dict( d=ds,
                   di=cvxopt.div(1., ds),
                   r=rs,
@@ -919,15 +649,12 @@ def test_kkt_solver( ntrials=100, tol=1e-6):
         
         dx, dy, dz = np.max(np.abs(dx)), np.max(np.abs(dy)), np.max(np.abs(dz))
         
-        print 'dx, dy, dz=', dx, dy, dz
-        # print z
-        # print zp
-
         if tol < np.max( [dx, dy, dz]):
-            import pdb
-            pdb.set_trace()
+            print 'KKT solver FAILS: max(dx=%g, dy=%g, dz=%g) > tol = %g' % \
+                (dx, dy, dz, tol)
+        print 'KKT solver succeeds: dx=%g, dy=%g, dz=%g' % (dx, dy, dz)
 
-def test_Gfunc( ntrials=100, tol=1e-10):
+def test_Gfunc( ntrials=10, tol=1e-10):
     K = 5
     sij = matrix( np.random.rand( K*K), (K, K))
     sij = 0.5*(sij.T + sij)
@@ -977,32 +704,28 @@ def test_Gfunc( ntrials=100, tol=1e-10):
 
 if __name__ == '__main__':
     # np.random.seed( 11)
-    # test_congruence()
-    # test_Gfunc()
+    #test_Gfunc(ntrials=10)
+    #test_kkt_solver(ntrials=10)
 
-    #test_kkt_solver(ntrials=100)
-
-    #import sys
-    #sys.exit()
-    sij = matrix( [[ 1.5, 0.1, 0.2, 0.5],
-                   [ 0.1, 1.1, 0.3, 0.2],
-                   [ 0.2, 0.3, 1.2, 0.1],
-                   [ 0.5, 0.2, 0.1, 0.9]])
-    # sij = sij[:2,:2]
-    #sij = matrix( [[1., 1], [1, 1.1]])
-    K = 20
+    K = 60
     sij = matrix( np.random.rand( K*K), (K, K))
-    nsofar = matrix( 2.*np.random.rand( K*K), (K, K))
+    nsofar = matrix( 0.*np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
     nsofar = 0.5*(nsofar + nsofar.T)
 
-    N = 20.
+    N = 1.
 
+    import time
+    tstart = time.time()
     nij = A_optimize_fast( sij, N, nsofar)
-    nij0 = update_A_optimal( sij, N, nsofar)
-    print nij0
-    print np.sum( nij0) + np.sum( np.diag( nij0))
-    print nij
-    print np.sum( nij) + np.sum( np.diag( nij))
+    tend = time.time()
+    tlapse = tend - tstart
+    print 'Fast A-optimize took %g seconds.' % tlapse
 
+    tstart = time.time()
+    nij0 = update_A_optimal( sij, N, nsofar)
+    tend = time.time()
+    tlapse = tend - tstart
+    print 'SDP A-optimize took %g seconds.' % tlapse
+    
     print 'dn=', np.max(np.abs( nij0 - nij))
