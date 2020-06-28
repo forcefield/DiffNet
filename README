@@ -18,7 +18,7 @@ Some examples are provided in examples.py.
 
 If you use DiffNet in a published work, please cite 
 
-Huafeng Xu, Optimal measurement network of pairwise differences, 2019, https://arxiv.org/abs/1906.08599.
+Huafeng Xu, Optimal measurement network of pairwise differences, J. Chem. Inf. Model. 59, 4720-4728, 2019, https://doi.org/10.1021/acs.jcim.9b00528.
 
 The following outlines an example application of the DiffNet: the
 calculation of binding free energies of a set of molecules from
@@ -26,10 +26,9 @@ individual (a.k.a. absolute) and relative binding free energy
 calculations.  (Underscored function names __func__ indicate
 user-defined external functions.)
 
-NOTE: For large networks (number of nodes greater than 50), diffnet does
-not scale well in memory.  The users may want to replace A_optimize() or
-update_A_optimal() with the sparse approximation sparse_A_optimal_network()
-in such cases.
+NOTE: For large networks (number of nodes greater than 80), diffnet does
+not scale well in memory.  The users may want to replace A_optimize() with 
+the sparse approximation sparse_A_optimal_network() in such cases.
 
 import numpy as np
 from diffnet import A_optimize, update_A_optimal
@@ -57,7 +56,7 @@ while not converged:
     # Update the A-optimal difference network given the current estimate of sij
     # the numbers of samples so far, and the total number of samples for
     # the next iteration
-    nij = update_A_optimal(sij, nsofar, ndelta)
+    nij = A_optimize(sij, ndelta, nsofar)
     # nij = A_optimize( sij)  # call this if not using iterative optimization.
     # nij[nij < ncut] = 0  # Omit pairs with impractically small allocations.
     nij = round_to_integers( nij)
