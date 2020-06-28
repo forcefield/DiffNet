@@ -244,19 +244,18 @@ z_{\alpha\beta} = y - p_{\alpha\beta} + \mvec( V_{\alpha\beta})^t\cdot \mvec\lef
 
 Plugging the above in Eq.~\ref{eq:KKT-3a}, we also eliminate $z_{ab}$.
 \begin{eqnarray}
-&&-n_{\alpha\beta} - d_{\alpha\beta}^2 \left( y + \mvec(V_{\alpha\beta})^t\cdot
-\mvec\left(\sum_i R_i^\ast F(\{ n_{ab} \}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right)\right)
+&&d_{\alpha\beta}^{-2} n_{\alpha\beta} + \mvec(V_{\alpha\beta})^t\cdot
+\mvec\left(\sum_i R_i^\ast F(\{ n_{ab} \}) R_i^\ast + \sum_i \gamma_i \gamma_i^t u_i\right) + y
 \nonumber \\
-&=& l_{\alpha\beta} - d_{\alpha\beta}^2 \left(p_{\alpha\beta} - \mvec( V_{\alpha\beta})^t\cdot
-\mvec\left( \sum_i L_i^\ast \right)\right)
+&=& p_{\alpha\beta} - \mvec( V_{\alpha\beta})^t\cdot  
+\mvec\left( \sum_i L_i^\ast \right) - d_{\alpha\beta}^{-2} l_{\alpha\beta}
 \label{eq:KKT-n-u-y}
 \end{eqnarray}
 
 Eq.~\ref{eq:KKT-n-u-y} ($K(K+1)/2$ equations), Eq.~\ref{eq:KKT-n-sum}
-(1 equation), Eq.~\ref{eq:KKT-n-u-zeta} ($K^2$ equations), and
-Eq.~\ref{eq:KKT-n-u} ($K$ equations) together determine the
-variables $\{ n_{ab} \}$ ($K(K+1)/2$ variables), $\{ u_i \}$ ($K$
-variables), $y$ (1 variable), and $\{ \zeta_i \}$ ($K^2$ variables).
+(1 equation), and Eq.~\ref{eq:KKT-n-u} ($K$ equations) together
+determine the variables $\{ n_{ab} \}$ ($K(K+1)/2$ variables), $\{ u_i
+\}$ ($K$ variables), and $y$ (1 variable).
 
 The matrix of the form $ R F(\{ n_{ab} \}) R$ is
 \begin{eqnarray}
@@ -289,25 +288,59 @@ s_{\alpha\beta}^{-2} \left(X_{\alpha\alpha} + X_{\beta\beta} - X_{\alpha\beta} -
 \end{array} \right.
 \end{equation}
 
-The equation for $\{n_{ab}\}$, $\{u_i\}$, $y$, and $\{ \zeta_i \}$, summarizing Eq.~\ref{eq:KKT-n-u-y}, ~\ref{eq:KKT-n-sum}, ~\ref{eq:KKT-n-u-zeta}, and ~\ref{eq:KKT-n-u}, is
+The equation for $\{n_{ab}\}$, $\{u_i\}$, and $y$, summarizing Eq.~\ref{eq:KKT-n-u-y}, ~\ref{eq:KKT-n-sum}, and ~\ref{eq:KKT-n-u}, is
 \begin{equation}
-B \left(
+\left(
+\begin{array}{cc}
+B & \vec{\eta} \\
+\vec{\eta}^t & 0 
+\end{array}\right)
+\left(
 \begin{array}{c}
-n_{11} \\
-n_{12} \\
-\vdots \\
-n_{KK} \\
-u_1 \\
-u_2 \\
-\vdots \\
-u_K \\
-y \\
-\zeta_1 \\
-\zeta_2 \\
-\vdots \\
-\zeta_K
-\end{array} \right) = D
+\vec{x} \\
+y 
+\end{array} \right) = \left(
+\begin{array}{c}
+\vec{x}_0 \\
+y_0 
+\end{array}
+\right)
+\label{eq:KKT-x-y}
 \end{equation}
-where B and D are as follows:
+where $\vec{x} = (n_{11}, n_{12}, \dots, n_{22}, n_{23}, \dots, n_{KK}, u_1, u_2,  
+\dots u_K)^t$, and $B$ is a symmetric matrix
+
+\begin{equation}
+B = \left(
+\begin{array}{cc}
+A & \vec{\eta} \\
+\vec{\eta}^t & \mathrm{diag}( R_{i,K+1,K+1}^2)
+\end{array}
+\right)
+\end{equation}
+where $\vec{\eta} = ( 1, 1, ... 1, 0, 0, ... 0 )^t$ is $K(K+1)/2$ 1's
+followed by $K$ 0's.
+
+Eq.~\ref{eq:KKT-x-y} can be solved by 
+\begin{eqnarray}
+y &=& \frac{\vec{\eta}^t\cdot B^{-1}\cdot\vec{x}_0 - y_0}{\vec{\eta}^t\cdot B^{-1} \vec{\eta}} \nonumber \\
+\vec{x} &=& B^{-1}\vec{x}_0 - y B^{-1}\vec{\eta}
+\end{eqnarray}
+
+Some algebra shows that the first $K(K+1)/2$-by-$K(K+1)/2$ submatrix of $A$ is given by
+\begin{equation}
+A_{\alpha\beta,ab} = 
+s_{ab}^{-2}s_{\alpha\beta}^{-2} \cdot \left\{
+\begin{array}{cl}
+\sum_i R_{i,a,\alpha}^2 & \text{ if } a=b, \alpha=\beta \\
+\sum_i (R_{i,a,\alpha} - R_{i,b,\alpha})^2 & \text{ if } a\neq b, \alpha=\beta \\
+\sum_i (R_{i,a,\alpha} - R_{i,a,\beta})^2 & \text{ if } a=b, \alpha\neq\beta \\
+\sum_i ((R_{i,a,\alpha} - R_{i,b,\alpha}) - (R_{i,a,\beta} - R_{i,b,\beta}))^2 & \text{ if } a\neq b, \alpha\neq\beta
+\end{array}\right.
+\end{equation}
+
+The computation of this submatrix $A_{\alpha\beta,ab}$ is $O(K^5)$ in
+time complexity and $O(K^4)$ in memory complexity; it is the most
+intensive computation in computing the A-optimal by cone programming.
 
 \end{document}
