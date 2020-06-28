@@ -1,7 +1,6 @@
 import numpy as np
 import cvxopt
 from cvxopt import blas, lapack, solvers, matrix, spmatrix, misc
-from diffnet import A_optimize, update_A_optimal
 
 def upper_index( i, j, K):
     '''
@@ -10,7 +9,48 @@ def upper_index( i, j, K):
     '''
     return K*i - i*(i+1)/2 + j
 
-def solution_to_nij( x, K):
+def solution_to_nij( sol, K, measure_indices=None):
+    '''
+    Get the KxK n[i][j] symmetric matrix for fractions of measurements from the
+    CVXOPT solution.
+    '''
+    if sol['status'] != 'optimal':
+        raise ValueError, sol['status']
+    x = sol['x']
+    # print x
+    n = matrix( 0., (K, K))
+    for i in xrange(K):
+        if measure_indices is not None:
+            m = measure_indices.get( (i,i), None)
+            if m is not None:
+                n[i,i] = x[m]
+        else:
+            n[i,i] = x[i]
+        for j in xrange(i+1, K):
+            if measure_indices is not None:
+                m = measure_indices.get( (i,j), None)
+                if m is None: continue
+            else:
+                m = measurement_index( i, j, K)
+            n[i,j] = n[j,i] = x[m]
+    return n
+
+def measurement_index( i, j, K):
+    '''
+    The measurement index m = (i,j) corresponds to the serial index
+    K + (K-1) + ... (K-i) + j - i - 1 = (i+1)*K - i(i+3)/2 + j - 1.
+    The measurement for m = (i,i) are the first i=0,1,...,K positions.
+
+    Args:
+    i < j: the indices for the difference measurement of (i, j) 
+    K: the total number of quantities of interests: 0<=i, j<K
+
+    Return:
+    The serial index of the measurement (i,j).
+    '''
+    return (i+1)*K - i*(i+3)/2 + j - 1
+
+def conelp_solution_to_nij( x, K):
     '''
     '''
     n = matrix( 0.0, (K, K))
@@ -53,11 +93,15 @@ def pairwise_diff( x, y, n):
 
     '''
     k = 0
+    r = x.size[0]
     for i in xrange(n):
-        y[:,k] = x[:,i]
+        #y[:,k] = x[:,i]
+        blas.copy( x, y, n=r, offsetx=i*r, offsety=k*r)
         k+=1
         for j in xrange(i+1, n):
-            y[:,k] = x[:,i] - x[:,j]
+            #y[:,k] = x[:,i] - x[:,j]
+            blas.copy( x, y, n=r, offsetx=i*r, offsety=k*r)
+            blas.axpy( x, y, alpha=-1, n=r, offsetx=j*r, offsety=k*r)
             k+=1
 
 def congruence_matrix( r, W, offset=0):
@@ -119,10 +163,99 @@ def Fisher_matrix( si2, nij):
     nij: KxK symmetric matrix of n[i,j].
     '''
     K = si2.size[0]
-    F = -cvxopt.mul(nij[:], si2[:])
-    d = -np.sum( np.array( F).reshape( K,K), axis=0)
+    F = -cvxopt.mul(nij, si2)
+    ones = matrix( 1., (K, 1))
+    d = matrix( 0., (K, 1))
+    blas.symv( F, ones, d, alpha=-1.)
     F[::K+1] = d[:]
     return matrix( F, (K,K))
+
+def sumdR2_aligned( Ris, K):
+    '''In constructing the KKT equation, the coefficient for n_{ab} in
+    the row (i,j) is given by
+    
+        R_{ai}^2 if a=b and i=j
+        (R_{ai} - R_{bi})^2  if a!=b and i=j
+        (R_{ai} - R_{aj})^2  if a=b and i!=j
+        (R_{ai} + R_{bj} - R_{bi} - R_{aj})^2  if a!=b and i!=j
+      * s_{ab}^{-2} * s_{ij}^{-2}
+
+    summed over K of R matrices.
+
+    This function computes the coefficients without the s_{ab}^{-2}s_{ij}^{-2}.
+    '''
+    ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+
+    # First, line up all the R matrices so that we can take the pairwise 
+    # difference of their columns in one go:
+    #
+    #  R1[:,1]  R1[:,2]  ... R1[:,K]
+    #  R2[:,1]  R2[:,2]  ... R2[:,K]
+    #  ...
+    #  RK[:,1]  R2[:,2]  ... RK[:,K]
+    KR = matrix( 0., (K*K, K))
+    start = 0
+    for i in xrange(K):
+        KR[start:start+K, :] = Ris[i][:K,:K]
+        start += K
+    
+    dR = matrix( 0., (K*K, K*(K+1)/2))
+    pairwise_diff( KR, dR, K)
+
+    # Now, rearrange dR into 
+    #
+    # dR1[1,(1,1)] dR2[1,(1,1)] ... dRK[1,(1,1)] dR1[1,(1,2)] ... dRK[1,(K,K)]
+    # dR1[2,(1,1)] dR2[2,(1,1)] ... dRK[2,(1,1)] dR1[2,(1,2)] ... dRK[2,(K,K)]
+    # ...
+    # dR1[K,(1,1)] dR2[K,(1,1)] ... dRK[K,(1,1)] dR1[K,(1,2)] ... dRK[K,(K,K)]
+    #
+    # Notice that this new matrix has the same column-major vector order as dR
+    # itself.
+    dR = matrix( dR[:], (K, K*K*(K+1)/2))
+    
+    # This scales with K^5 in memory!  If this becomes memory-bound, we need
+    # to break this into subgroups.
+    ddRs = matrix( 0., (K*K*(K+1)/2, K*(K+1)/2))
+    # ddRs := ddR1[(1,1),:]
+    #         ddR2[(1,1),:]
+    #         ...
+    #         ddRK[(1,1),:]
+    #         ddR1[(1,2),:]
+    #         ddR2[(1,2),:]
+    #         ...
+    #         ddRK[(1,2),:]
+    #         ...
+    #         ddR1[(K,K),:]
+    #         ddR2[(K,K),:]
+    #         ...
+    #         ddRK[(K,K),:]
+    # each ddRi is a K*(K+1)/2 by K*(K+1)/2 matrix
+    pairwise_diff( dR.T, ddRs, K)
+    ddRs = ddRs**2
+
+    # Now sum up every K rows
+    # ddR2 := \sum_i ddR[i]^2
+    ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+    start = 0
+    bsize = K*(K+1)/2
+    for i in xrange(K):
+        ddR2 += ddRs[i::K, :]
+    return ddR2
+
+def sumdR2( Ris, K):
+    ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+    for i in xrange(K):
+        Ri = Ris[i]
+        # dR[:(a,b)] = R[:,a] - R[:,b]
+        dR = matrix( 0., (K, K*(K+1)/2))
+        pairwise_diff( Ri[:K,:K], dR, K)
+        # ddR[:(ap,bp)] = dR'[:,ap] - dR'[:,bp]
+        ddR = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
+        pairwise_diff( dR.T, ddR, K)
+        ddR = ddR**2
+        ddR2 += ddR
+        # blas.axpy( ddR, ddR2, alpha=1., n=K*K*(K+1)*(K+1)/4)
+    return ddR2
 
 def Aopt_KKT_solver( si2, W):
     '''
@@ -152,22 +285,7 @@ def Aopt_KKT_solver( si2, W):
     for i in xrange(K):
         blas.gemm( rtis[i], rtis[i], Ris[i], transB = 'T')
 
-    # The coefficient for n_{ab} in the row (i,j) is given by
-    #    R_{ai}^2 if a=b and i=j
-    #    (R_{ai} - R_{bi})^2  if a!=b and i=j
-    #    (R_{ai} - R_{aj})^2  if a=b and i!=j
-    #    (R_{ai} + R_{bj} - R_{bi} - R_{aj})^2  if a!=b and i!=j
-    #  * s_{ab}^{-2} * s_{ij}^{-2}
-    ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
-    for i in xrange(K):
-        Ri = Ris[i]
-        # dR[:(a,b)] = R[:,a] - R[:,b]
-        dR = matrix( 0., (K, K*(K+1)/2))
-        pairwise_diff( Ri[:K,:K], dR, K)
-        # ddR[:(ap,bp)] = dR'[:,ap] - dR'[:,bp]
-        ddR = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
-        pairwise_diff( dR.T, ddR, K)
-        ddR2 += ddR**2
+    ddR2 = sumdR2( Ris, K)
 
     # upper triangular representation si2ab[(a,b)] := si2[a,b]
     si2ab = matrix( 0., (K*(K+1)/2, 1))
@@ -396,8 +514,6 @@ def Aopt_KKT_solver( si2, W):
                 print y0
                 print z0
                 print Bm0
-                import pdb
-                pdb.set_trace()
 
     ###
     #  END of kkt_solver.
@@ -531,14 +647,10 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
         G = spmatrix( X, I, J, (nrows, ncols))
 
     # h vector.
-    h = np.zeros( K*(K+1)/2 + K*(K+1)*(K+1))
+    h = matrix( 0., (K*(K+1)/2 + K*(K+1)*(K+1), 1))
     # F := Fisher matrix
     if nsofar is not None:
-        f = cvxopt.mul( nsofar, si2)
-        F = np.diag( np.sum( f, axis=1))
-        for i in xrange(K):
-            f[i,i] = 0
-        F -= f
+        F = Fisher_matrix( si2, nsofar)
     else:
         F = None
 
@@ -558,12 +670,52 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     
     return G, h, A
 
-def A_optimize_fast( sij, N=1., nsofar=None):
+def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
     '''
+    Find the A-optimal of the difference network that minimizes the trace of
+    the covariance matrix.  This corresponds to minimizing the average error.
+
+    In an iterative optimization of the difference network, the
+    optimal allocation is updated with the estimate of s_{ij}, and we
+    need to allocate the next iteration of sampling based on what has
+    already been sampled for each pair.
+
+    This implementation uses a customized KKT solver.  The time complexity is
+    O(K^5), memory complexity is O(K^4).
+
+    Args:
+
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+
+    nadd: float, Nadd gives the additional number of samples to be collected in
+    the next iteration.
+
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
+
+    only_include_measurements: set of pairs, if not None, indicate which 
+    pairs should be considered in the optimal network.  Any pair (i,j) not in 
+    the set will be excluded in the allocation (i.e. dn[i,j] = 0).  The pair
+    (i,j) in the set must be ordered so that i<=j. 
+
+    Return:
+
+    KxK symmetric matrix of float, the (i,j) element of which gives the
+    number of samples to be allocated to the measurement of (i,j) difference
+    in the next iteration.
     '''
-    # si2[i,j] := 1/s_{ij}^2
     si2 = cvxopt.div( 1., sij**2) 
     K = si2.size[0]
+    
+    if only_include_measurements is not None:
+        for i in xrange(K):
+            for j in xrange(i, K):
+                if not (i,j) in only_include_measurements:
+                    # Set the s[i,j] to infinity, thus excluding the pair.
+                    si2[i,j] = si2[j,i] = 0.
 
     Gm, hv, Am = Aopt_GhA( si2, nsofar, G_as_function=True)
     dims = dict( l = K*(K+1)/2,
@@ -578,12 +730,242 @@ def A_optimize_fast( sij, N=1., nsofar=None):
         return misc.kkt_ldl( Gm, dims, Am)(W)
 
     sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
-                          options=dict(maxiters=40,
-                                       feastol=1e-6),
+                          options=dict(maxiters=50,
+                                       feastol=1e-7),
                            kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
-    return solution_to_nij( sol['x'], K)
+    return conelp_solution_to_nij( sol['x'], K)
   
+def A_optimize_sdp( sij):
+    '''
+    Find the A-optimal of the difference network that minimizes the trace of
+    the covariance matrix.  This corresponds to minimizing the average error.
+
+    Args: 
+
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+
+    Return:
+
+    nij: symmetric matrix, where n[i][j] is the fraction of measurements
+    to be performed for the difference between i and j, satisfying  
+    \sum_i n[i][i] + \sum_{i<j} n[i][j] = 1.
+
+    The implementation follows Chapter 7.5 (Experimental design) of Boyd,
+    Convex Optimization (http://web.stanford.edu/~boyd/cvxbook/bv_cvxbook.pdf)
+    and https://cvxopt.org/userguide/coneprog.html#semidefinite-programming
+    '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
+    # We solve the dual problem, which can be cast as a semidefinite
+    # programming (SDP) problem.
+    assert( sij.size[0] == sij.size[1])
+    K = sij.size[0]
+    M = K*(K+1)/2
+    # x = ( n, u ), where u=(u_1,u_2,...,u_K) is the dual variables.
+    # We will minimize \sum_k u_k = c.x
+    c = matrix( [0.]*M + [1.]*K )
+    
+    # Subject to the following constraints
+    # \sum_{m=1}^M n_m [ [ v_m.v_m^t, 0 ], [0, 0] ]
+    # + u_k [ [0, 0], [0, 1] ] + [ [0, e_k], [e_k^t, 0] ] >= 0
+    # for k = 1,2,...,K
+    # where M = K*(K+1)/2 are the number of types of measurements.
+    # m index the measurements, m = (i,j).
+    # v_m is a length K measurement vector, where 
+    #     v_{(i,i), a} = s_{ii}^{-1}\delta_{i,a}
+    #     v_{(i,j), a} = s_{ij]^{-1}\delta_{i,a} - s_{ij}^{-1}\delta_{j,a}
+    # The matrix U_m = v_m.v_m^t is
+    # U_{(i,i), (a,b)} = s_{ii}^{-2}\delta_{i,a}\delta_{i,b}
+    # U_{(i,j), (a,b)} 
+    #     = s_{ij}^{-2}(\delta_{i,a}\delta_{i,b} + \delta_{j,a}\delta_{j,b}) 
+    #     - s_{ij}^{-2}(\delta_{i,a}\delta_{j,b} + \delta_{j,a}\delta_{i,b})
+    
+    # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
+    # column-major vector representing the KxK matrix of U_m augmented
+    # by a length K vector, hence the dimension (K+1)x(K+1).
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    G0 = []
+    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    
+    for i in xrange( K):
+        # The index of matrix element (i,i) in column-major representation
+        # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
+        # Gs[0][i*(K+2), i] = 1./(sij[i,i]*sij[i,i])
+        G0.append( (i*(K+2), i, -1./(sij[i,i]*sij[i,i])))
+        for j in xrange( i+1, K):
+            m = measurement_index( i, j, K)
+            # The index of matrix element (i,j) in column-major representation
+            # of a (K+1)x(K+1) matrix is j*(K+1) + i
+            v2 = 1./(sij[i,j]*sij[i,j])
+            # Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            G0.append( (j*(K+1) + i, m, v2))
+            G0.append( (i*(K+1) + j, m, v2))
+            # Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            G0.append( (i*(K+2), m, -v2))
+            G0.append( (j*(K+2), m, -v2))
+            
+    # G.(x, u) + h >=0 <=> -G.(x, u) <= h
+    # Gs[0] *= -1.
+    
+    Gs = []
+    for k in xrange( K):
+        # if (k>0): Gs[k][:,:M] = Gs[0][:,:M]
+        # for the term u_k [ [0, 0], [0, 1] ]
+        # Gs[k][-1, M+k] = -1.
+        I = [ i for i, j, x in G0 ] + [ (K+1)*(K+1) - 1 ]
+        J = [ j for i, j, x in G0 ] + [ M + k ]
+        X = [ x for i, j, x in G0 ] + [ -1. ]
+        Gs.append( spmatrix(X, I, J, ((K+1)*(K+1), M+K)))
+        hs[k][k,-1] = hs[k][-1,k] = 1.
+
+    # The constraint n >= 0, as G0.x <= h0
+    # G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    G0 = spmatrix( -np.ones( M), range( M), range( M), (M+K, M+K))
+    h0 = matrix( np.zeros( M + K))
+
+    # The constraint \sum_m n_m = 1.
+    # A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    A = spmatrix( np.ones( M), np.zeros( M, dtype=int), range( M), (1, M+K))
+    b = matrix( 1., (1, 1) )
+    
+    sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
+    n = solution_to_nij( sol, K)
+
+    return n
+
+def update_A_optimal_sdp( sij, nadd, nsofar, only_include_measurements=None):
+    '''
+    In an iterative optimization of the difference network, the
+    optimal allocation is updated with the estimate of s_{ij}, and we
+    need to allocate the next iteration of sampling based on what has
+    already been sampled for each pair.
+
+    Args:
+
+    sij: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is proportional to s[i][j]^2 =
+    s[j][i]^2, and the measurement variance of i is proportional to
+    s[i][i]^2.
+    nadd: float, Nadd gives the additional number of samples to be collected in
+    the next iteration.
+    nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
+    that has already been collected for (i,j) pair.
+    only_include_measurements: set of pairs, if not None, indicate which 
+    pairs should be considered in the optimal network.  Any pair (i,j) not in 
+    the set will be excluded in the allocation (i.e. dn[i,j] = 0).  The pair
+    (i,j) in the set must be ordered so that i<=j. 
+
+    Return:
+
+    KxK symmetric matrix of float, the (i,j) element of which gives the
+    number of samples to be allocated to the measurement of (i,j) difference
+    in the next iteration.
+    '''
+    if not isinstance( sij, matrix): sij = matrix( sij)
+    assert( sij.size[0] == sij.size[1])
+    K = sij.size[0]
+    if only_include_measurements is None:
+        M = K*(K+1)/2
+    else:
+        M = len(only_include_measurements)
+        measure_indices = dict()
+        for mid, (i,j) in enumerate( only_include_measurements):
+            measure_indices[(i,j)] = mid
+
+    # x = ( n, u ), where u=(u_1,u_2,...,u_K) is the dual variables.
+    # We will minimize \sum_k u_k = c.x
+    c = matrix( [0.]*M + [1.]*K )
+
+    # Subject to the following constraints
+    # \sum_{m=1}^M (n_m + dn_m) [ [ v_m.v_m^t, 0 ], [0, 0] ]
+    # + u_k [ [0, 0], [0, 1] ] + [ [0, e_k], [e_k^t, 0] ] >= 0
+    # for k = 1,2,...,K
+    # where M = K*(K+1)/2 are the number of types of measurements.
+    # m index the measurements, m = (i,j).
+    # v_m is a length K measurement vector, where 
+    #     v_{(i,i), a} = s_{ii}^{-1}\delta_{i,a}
+    #     v_{(i,j), a} = s_{ij]^{-1}\delta_{i,a} - s_{ij}^{-1}\delta_{j,a}
+    # The matrix U_m = v_m.v_m^t is
+    # U_{(i,i), (a,b)} = s_{ii}^{-2}\delta_{i,a}\delta_{i,b}
+    # U_{(i,j), (a,b)} 
+    #     = s_{ij}^{-2}(\delta_{i,a}\delta_{i,b} + \delta_{j,a}\delta_{j,b}) 
+    #     - s_{ij}^{-2}(\delta_{i,a}\delta_{j,b} + \delta_{j,a}\delta_{i,b})
+    # where \delta_{i,a} = 1 if i==a else 0 is the Kronecker delta.
+    
+    # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
+    # column-major vector representing the KxK matrix of U_m augmented
+    # by a length K vector, hence the dimension (K+1)x(K+1).
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    G0 = []
+    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    
+    for i in xrange( K):
+        # The index of matrix element (i,i) in column-major representation
+        # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
+        v2 = 1./(sij[i,i]*sij[i,i])
+        if (only_include_measurements is not None):
+            m = measure_indices.get( (i,i), None)
+            if m is not None:
+                # Gs[0][i*(K+2), m] = v2
+                G0.append( (i*(K+2), m, -v2))
+        else:
+            # Gs[0][i*(K+2), i] = v2
+            G0.append( (i*(K+2), i, -v2))
+        hs[0][i,i] += nsofar[i,i]*v2
+        for j in xrange( i+1, K):
+            # The index of matrix element (i,j) in column-major representation
+            # of a (K+1)x(K+1) matrix is j*(K+1) + i
+            v2 = 1./(sij[i,j]*sij[i,j])
+            nv2 = nsofar[i,j]*v2
+            hs[0][i,j] = hs[0][j,i] = -nv2
+            hs[0][i,i] += nv2
+            hs[0][j,j] += nv2
+            if (only_include_measurements is not None):
+                m = measure_indices.get( (i,j), None)
+                if m is None: continue
+            else:        
+                m = measurement_index( i, j, K)
+            # Gs[0][j*(K+1) + i, m] = Gs[0][i*(K+1) + j, m] = -v2
+            G0.append( (j*(K+1) + i, m, v2))
+            G0.append( (i*(K+1) + j, m, v2))
+            # Gs[0][i*(K+2), m] = Gs[0][j*(K+2), m] = v2
+            G0.append( (i*(K+2), m, -v2))
+            G0.append( (j*(K+2), m, -v2))
+
+    # G.(x, u) + h >=0 <=> -G.(x, u) <= h
+    # Gs[0] *= -1.
+
+    Gs = []
+    for k in xrange( K):
+        if (k>0): 
+            # Gs[k][:,:M] = Gs[0][:,:M]
+            hs[k][:K,:K] = hs[0][:K,:K]
+        # for the term u_k [ [0, 0], [0, 1] ]
+        # Gs[k][-1, M+k] = -1.
+        I = [ i for i, j, x in G0 ] + [ (K+1)*(K+1) - 1 ]
+        J = [ j for i, j, x in G0 ] + [ M + k ]
+        X = [ x for i, j, x in G0 ] + [ -1. ]
+        Gs.append( spmatrix(X, I, J, ((K+1)*(K+1), M+K)))
+        hs[k][k,-1] = hs[k][-1,k] = 1.
+
+    # The constraint dn >= 0, as G0.x <= h0
+    # G0 = matrix( np.diag(np.concatenate( [ -np.ones( M), np.zeros( K) ])))
+    G0 = spmatrix( -np.ones( M), range(M), range(M), (M+K, M+K))
+    h0 = matrix( np.zeros( M + K))
+
+    # The constraint \sum_m dn_m = nadd.
+    # A = matrix( [1.]*M + [0.]*K, (1, M + K) )
+    A = spmatrix( np.ones( M), np.zeros( M, dtype=int), range( M), (1, M+K))
+    b = matrix( float(nadd), (1, 1) )
+    
+    sol = cvxopt.solvers.sdp( c, G0, h0, Gs, hs, A, b)
+    dn = solution_to_nij( sol, K, only_include_measurements and measure_indices)
+
+    return dn
+
 def test_kkt_solver( ntrials=5, tol=1e-6):
     K = 5
     sij = matrix( np.random.rand( K*K), (K, K))
@@ -702,28 +1084,76 @@ def test_Gfunc( ntrials=10, tol=1e-10):
         else:
             print 'G function succeeds for trans=T: dy=%g' % dy
 
+def test_sumdR2( ntrials=10, tol=1e-9):
+    K = 40
+    import time
+
+    tnaive = tfast = 0.
+    
+    for t in xrange(ntrials):
+        Ris = [ matrix(np.random.rand(K*K), (K,K)) for i in xrange(K) ]
+        for i in xrange(K):
+            Ris[i] = 0.5*(Ris[i].T + Ris[i])
+        
+        tstart = time.time()
+        ddR2 = sumdR2( Ris, K)
+        tend = time.time()
+        tnaive += (tend - tstart)
+
+        tstart = time.time()
+        ddR2p = sumdR2_aligned( Ris, K)
+        tend = time.time()
+        tfast += (tend - tstart)
+
+        delta = np.max(np.abs(ddR2 - ddR2p))
+        if (delta > tol):
+            print 'sum dR test FAILED: delta=%g > tol=%g' % (delta, tol)
+        else:
+            print 'sum dR test succeeds: delta=%g' % delta
+    print 'Timing for naive sum dR: %f seconds per call.' % (tnaive/ntrials)
+    print 'Timing for aligned sum dR: %f seconds per call.' % (tfast/ntrials)
+    
 if __name__ == '__main__':
-    # np.random.seed( 11)
+    #np.random.seed( 11)
     #test_Gfunc(ntrials=10)
     #test_kkt_solver(ntrials=10)
+    
+    #test_sumdR2()
+    #import sys
+    #sys.exit()
 
-    K = 60
+    K = 30
     sij = matrix( np.random.rand( K*K), (K, K))
-    nsofar = matrix( 0.*np.random.rand( K*K), (K, K))
+    nsofar = matrix( 0.2*np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)
     nsofar = 0.5*(nsofar + nsofar.T)
+
+    if (False):
+        connectivity = 5
+        only_include_measurements = set()
+        for i in xrange( K):
+            js = i + np.floor((K-i)*np.random.rand(connectivity)).astype('int')
+            for j in js:
+                only_include_measurements.add( (i,j))
+    else:
+        only_include_measurements = None
 
     N = 1.
 
     import time
     tstart = time.time()
-    nij = A_optimize_fast( sij, N, nsofar)
+    nij = A_optimize_fast( sij, N, nsofar, only_include_measurements)
     tend = time.time()
     tlapse = tend - tstart
     print 'Fast A-optimize took %g seconds.' % tlapse
+    # print nij
+
+    if (K>=80):
+        import sys
+        sys.exit()
 
     tstart = time.time()
-    nij0 = update_A_optimal( sij, N, nsofar)
+    nij0 = update_A_optimal_sdp( sij, N, nsofar, only_include_measurements)
     tend = time.time()
     tlapse = tend - tstart
     print 'SDP A-optimize took %g seconds.' % tlapse
