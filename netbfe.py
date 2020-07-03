@@ -37,7 +37,7 @@ def COX2params():
                   [ 2,  1, 17, 16,  1,  0, 17, 16],
                   [16, 17,  1,  2, 16, 17,  0,  1],
                   [17, 16,  2,  1, 17, 16,  1,  0]], dtype=float)
-    sCOX2 = 100.*np.sqrt( sCOX2)
+    sCOX2 = 10.*np.sqrt( sCOX2)
     sCOX2 = matrix( sCOX2)
 
     K = sCOX2.size[0]
@@ -78,7 +78,7 @@ def mockupBFEresults( n, s, dG0):
 
     return dG, isigma2
 
-def networkBFEalloc( s, delta, N):
+def networkBFEalloc( s, N, delta=None):
     '''Use A-optimal to allocate the network of binding free energy
     calculations.
 
@@ -142,7 +142,7 @@ def networkBFEdG( ddG, isigma2, dG0, delta):
     binding free energy of molecule i.
 
     '''
-    dG, v = MLestimate( ddG, isigma2, dG0, delta)
+    dG, v = MLestimate( ddG, isigma2, dG0, np.sqrt(1./delta))
     return dG
 
 def test_A_optimality_with_reference( s, n, delta, dn=1E-1, ntimes=10):
@@ -191,7 +191,7 @@ def unit_test():
                 delta[i] = np.infty
             
     N = 1000.
-    n = networkBFEalloc( s, delta, N)
+    n = networkBFEalloc( s, N, delta)
 
     success = True
     success = success and test_A_optimality_with_reference( s, n, delta)
@@ -201,9 +201,7 @@ def unit_test():
 
     ddG, isigma2 = mockupBFEresults( n, s, dG0)
 
-    di2 = np.array( 
-        [ 1./delta[i]**2 if dG0p[i] is not None else 0. for i in xrange(K)])
-    dG = networkBFEdG( ddG, isigma2, dG0p, di2)
+    dG = networkBFEdG( ddG, isigma2, dG0p, delta)
     
     cov = covariance( s, n, delta)
     err = np.sqrt(np.diag( cov))

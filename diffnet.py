@@ -514,10 +514,8 @@ def MLestimate( xij, invsij2, x0=None, di2=None):
     z = np.sum( invsij2*xij, axis=1)  
     if di2 is not None and x0 is not None:
         for i in xrange( len(z)):
-            if x0[i] is not None and x0[i] is not np.nan:
+            if x0[i] is not None and x0[i] is not np.nan and di2[i] != 0:
                 z[i] += di2[i]*x0[i]
-            else:
-                di2[i] = 0.
     
     # F[i][i] = \sigma_i^{-2} + \delta_i^{-2} + \sum_{k\neq i} \sigma_{ik}^{-2} 
     Fd = np.diag( np.sum( invsij2, axis=1))
