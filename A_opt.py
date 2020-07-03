@@ -152,7 +152,7 @@ def tri2symm( x, n):
         p += (n-i)
     return y
 
-def Fisher_matrix( si2, nij):
+def Fisher_matrix( si2, nij, di2=None):
     '''
     Return the Fisher information matrix.
     
@@ -161,6 +161,9 @@ def Fisher_matrix( si2, nij):
     si2: KxK symmetric matrix, si2[i,j] = 1/s[i,j]^2
 
     nij: KxK symmetric matrix of n[i,j].
+
+    di2: length K vector, di2[i] = 1/delta[i]^2
+
     '''
     K = si2.size[0]
     F = -cvxopt.mul(nij, si2)
@@ -168,6 +171,10 @@ def Fisher_matrix( si2, nij):
     d = matrix( 0., (K, 1))
     blas.symv( F, ones, d, alpha=-1.)
     F[::K+1] = d[:]
+
+    if di2 is not None:
+        F[::K+1] += di2[:]
+
     return matrix( F, (K,K))
 
 def sumdR2_aligned( Ris, K):
@@ -584,7 +591,7 @@ def Aopt_Gfunc( si2, x, y, alpha=1.0, beta=0.0, trans='N'):
         y[:hkkp1] = -xab + beta*y[:hkkp1]
         y[hkkp1:] = -xKK + beta*y[hkkp1:]
 
-def Aopt_GhA( si2, nsofar=None, G_as_function=False):
+def Aopt_GhA( si2, nsofar=None, di2=None, G_as_function=False):
     '''Return the G, h, and A matrix for the cone programming to solve the
     A-optimal problem.
 
@@ -593,6 +600,9 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     si2: symmetric KxK matrix, si2[i,j] = 1/s_{ij}^2
     
     nsofar: symmetric KxK matrix, n_{ij} for existing samples
+
+    di2: length K vector, di2[i] = 1/delta_i^2 for the uncertainty on 
+    quantity x_i as measured by other means.
 
     Returns:
 
@@ -649,8 +659,12 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     # h vector.
     h = matrix( 0., (K*(K+1)/2 + K*(K+1)*(K+1), 1))
     # F := Fisher matrix
-    if nsofar is not None:
-        F = Fisher_matrix( si2, nsofar)
+    if nsofar is not None or di2 is not None:
+        if nsofar is None:
+            F = matrix( 0., (K, K))
+            F[::K+1] = di2
+        else:
+            F = Fisher_matrix( si2, nsofar, di2)
     else:
         F = None
 
@@ -670,7 +684,9 @@ def Aopt_GhA( si2, nsofar=None, G_as_function=False):
     
     return G, h, A
 
-def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
+def A_optimize_fast( sij, N=1., nsofar=None, delta=None, 
+                     only_include_measurements=None,
+                     maxiters=100, feastol=1e-6):
     '''
     Find the A-optimal of the difference network that minimizes the trace of
     the covariance matrix.  This corresponds to minimizing the average error.
@@ -696,6 +712,10 @@ def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
     nsofar: KxK symmetric matrix, where nsofar[i,j] is the number of samples
     that has already been collected for (i,j) pair.
 
+    delta: a length K vector.  delta[i] is the measurement uncertainty on the
+    quantity x[i] from an independent experiment; if no independent experiment
+    provides a value for x[i], delta[i] is set to numpy.infty.
+
     only_include_measurements: set of pairs, if not None, indicate which 
     pairs should be considered in the optimal network.  Any pair (i,j) not in 
     the set will be excluded in the allocation (i.e. dn[i,j] = 0).  The pair
@@ -710,6 +730,12 @@ def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
     si2 = cvxopt.div( 1., sij**2) 
     K = si2.size[0]
     
+    if delta is not None:
+        di2 = np.array( [ 1./delta[i]**2 if delta[i] is not None else 0. 
+                          for i in xrange(K)])
+    else:
+        di2 = None
+
     if only_include_measurements is not None:
         for i in xrange(K):
             for j in xrange(i, K):
@@ -717,7 +743,7 @@ def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
                     # Set the s[i,j] to infinity, thus excluding the pair.
                     si2[i,j] = si2[j,i] = 0.
 
-    Gm, hv, Am = Aopt_GhA( si2, nsofar, G_as_function=True)
+    Gm, hv, Am = Aopt_GhA( si2, nsofar, di2=di2, G_as_function=True)
     dims = dict( l = K*(K+1)/2,
                  q = [],
                  s = [K+1]*K )
@@ -730,8 +756,8 @@ def A_optimize_fast( sij, N=1., nsofar=None, only_include_measurements=None):
         return misc.kkt_ldl( Gm, dims, Am)(W)
 
     sol = solvers.conelp( cv, Gm, hv, dims, Am, bv, 
-                          options=dict(maxiters=50,
-                                       feastol=1e-7),
+                          options=dict(maxiters=maxiters,
+                                       feastol=feastol),
                            kktsolver=lambda W: Aopt_KKT_solver( si2, W))
 
     return conelp_solution_to_nij( sol['x'], K)
@@ -985,6 +1011,7 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
     def my_solver( W):
         return Aopt_KKT_solver( si2, W)
 
+    success = True
     for t in xrange( ntrials):
         x = matrix( 1*(np.random.rand( K*(K+1)/2+K) - 0.5), (K*(K+1)/2+K, 1))
         y = matrix( np.random.rand( 1), (1,1))
@@ -1034,7 +1061,9 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
         if tol < np.max( [dx, dy, dz]):
             print 'KKT solver FAILS: max(dx=%g, dy=%g, dz=%g) > tol = %g' % \
                 (dx, dy, dz, tol)
+            success = False
         print 'KKT solver succeeds: dx=%g, dy=%g, dz=%g' % (dx, dy, dz)
+    return success
 
 def test_Gfunc( ntrials=10, tol=1e-10):
     K = 5
@@ -1044,6 +1073,8 @@ def test_Gfunc( ntrials=10, tol=1e-10):
     alpha = 1.5
     beta = 0.25
     G, h, A = Aopt_GhA( si2)
+
+    success = True
 
     for i in xrange( ntrials):
         trans = 'N'
@@ -1058,7 +1089,8 @@ def test_Gfunc( ntrials=10, tol=1e-10):
         
         dy = np.max(np.abs(y - yp))
         if (dy > tol):
-            print 'G function fails for trans=N: dy=%g' % dy
+            success = False
+            print 'G function FAILS for trans=N: dy=%g' % dy
         else:
             print 'G function succeeds for trans=N: dy=%g' % dy
             
@@ -1080,9 +1112,12 @@ def test_Gfunc( ntrials=10, tol=1e-10):
 
         dy = np.max(np.abs(y - yp))
         if (dy > tol):
-            print 'G function fails for trans=T: dy=%g' % dy
+            success = False
+            print 'G function FAILS for trans=T: dy=%g' % dy
         else:
             print 'G function succeeds for trans=T: dy=%g' % dy
+
+    return success
 
 def test_sumdR2( ntrials=10, tol=1e-9):
     K = 40
@@ -1090,6 +1125,7 @@ def test_sumdR2( ntrials=10, tol=1e-9):
 
     tnaive = tfast = 0.
     
+    success = True
     for t in xrange(ntrials):
         Ris = [ matrix(np.random.rand(K*K), (K,K)) for i in xrange(K) ]
         for i in xrange(K):
@@ -1107,22 +1143,21 @@ def test_sumdR2( ntrials=10, tol=1e-9):
 
         delta = np.max(np.abs(ddR2 - ddR2p))
         if (delta > tol):
+            success = False
             print 'sum dR test FAILED: delta=%g > tol=%g' % (delta, tol)
         else:
             print 'sum dR test succeeds: delta=%g' % delta
     print 'Timing for naive sum dR: %f seconds per call.' % (tnaive/ntrials)
     print 'Timing for aligned sum dR: %f seconds per call.' % (tfast/ntrials)
+    return success
+
+def unit_test():
+    test_Gfunc( ntrials=100)
+    test_kkt_solver( ntrials=100)
+    test_sumdR2()
     
 if __name__ == '__main__':
-    #np.random.seed( 11)
-    #test_Gfunc(ntrials=10)
-    #test_kkt_solver(ntrials=10)
-    
-    #test_sumdR2()
-    #import sys
-    #sys.exit()
-
-    K = 30
+    K = 200
     sij = matrix( np.random.rand( K*K), (K, K))
     nsofar = matrix( 0.2*np.random.rand( K*K), (K, K))
     sij = 0.5*(sij + sij.T)

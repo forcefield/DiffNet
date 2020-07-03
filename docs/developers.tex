@@ -1,5 +1,6 @@
 \documentclass{article}
 \usepackage{amsmath}
+\usepackage{amssymb}
 
 \newcommand*{\mvec}{\mathbf{\mathrm{vec}}}
 \newcommand*{\abcd}[4]{\left( \begin{array}{cc} #1 & #2 \\ #3 & #4 \end{array} \right)}
@@ -342,5 +343,52 @@ s_{ab}^{-2}s_{\alpha\beta}^{-2} \cdot \left\{
 The computation of this submatrix $A_{\alpha\beta,ab}$ is $O(K^5)$ in
 time complexity and $O(K^4)$ in memory complexity; it is the most
 intensive computation in computing the A-optimal by cone programming.
+
+\section{Including reference input}
+
+Often, some of the quantities, say $\{x_a|a\in Q\}$, are measured by
+other experiments to within certain statistical error $\{\tilde{x}_a
+\pm \delta_a|a\in Q\}$. The likelihood that our new measurements
+produce the set of values $\{ \hat{x}_e \}$ and the other experiments
+produce the set of values $\{ \tilde{x}_a | a\in Q\}$, given the true
+values of the quantities of $\{ x_i \}$, is
+\begin{eqnarray}
+L &=& \prod_i (\sqrt{2\pi \sigma_i})^{-1} 
+  \exp\left( -\frac{(x_i - \hat{x}_i)^2}{2\sigma_i^2} \right)
+\nonumber \\
+  &\cdot& \prod_{a\in Q} (\sqrt{2\pi \delta_a})^{-1}
+  \exp\left( -\frac{(x_a - \tilde{x}_a)^2}{2\delta_a^2} \right)
+\nonumber \\
+  &\cdot& \prod_{i<j} (\sqrt{2\pi \sigma_{ij}})^{-1}
+  \exp\left( -\frac{(x_i - x_j - \hat{x}_{ij})^2}{2\sigma_{ij}^2}\right)
+\label{eq:likelihood}
+\end{eqnarray}
+
+Maximizing $\ln L$ with respect to $\{ x_i \}$ yields
+
+\begin{equation}
+F \vec{x} = \vec{z}
+\end{equation}
+
+where
+\begin{equation}
+F_{ij} = \left\{
+\begin{array}{cl}
+\delta_i^{-2} + \sigma_i^{-2} + \sum_{k\neq i} \sigma_{ik}^{-2} & \text{ if } i = j \text{ and } i\in Q \\
+\sigma_i^{-2} + \sum_{k\neq i} \sigma_{ki}^{-2} & \text{ if } i=j \text{ and } i\notin Q \\
+-\sigma_{ij}^{-2} & \text{ if } i\neq j
+\end{array}
+\right.
+\label{eq:Fisher-information-matrix}
+\end{equation}
+and
+\begin{equation}
+z_i = \left\{
+\begin{array}{cl}
+\sigma_i^{-2} \hat{x}_i + \delta_i^{-2} \tilde{x}_i + \sum_{j\neq i}\sigma_{ij}^{-2} \hat{x}_{ij} & \text{ if } i \in Q \\
+\sigma_i^{-2} \hat{x}_i + \sum_{j\neq i}\sigma_{ij}^{-2} & \text{ if } i \notin Q
+\end{array}
+\right.
+\end{equation}
 
 \end{document}
