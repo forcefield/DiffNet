@@ -106,8 +106,7 @@ __report_free_energy__( dgi, covar, ...)
 
 ```
 
-### Binding free energy calculations with experimental data for 
-### some reference molecules 
+### Binding free energy calculations with experimental data for some reference molecules 
 
 Please refer to netbfe.py and the Jupyter notebook netbfe.ipynb to see
 how to use DiffNet for binding free energy calculations when
