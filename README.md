@@ -1,7 +1,11 @@
+# DiffNet 
+
 DiffNet is a Python tool for finding optimal allocations of sampling
 in computational or experimental measurements of the individual
 quantities and their pairwise differences, so as to minimize the covariance
 in the estimated quantities.
+
+## Prerequisites
 
 DiffNet depends on CVXOPT (http://cvxopt.org) and networkx
 (https://networkx.github.io/).  You can install these two libraries using
@@ -10,15 +14,19 @@ anaconda:
 conda install -c conda-forge cvxopt
 conda install -c anaconda networkx
 
+## Civil matters
+
 DiffNet is free open source software.  NO WARRANTY, Use AS IS.
 
-Copyright (C) 2018-2019 Huafeng Xu
-
-Some examples are provided in examples.py.
+Copyright (C) 2018-2020 Huafeng Xu
 
 If you use DiffNet in a published work, please cite 
 
 Huafeng Xu, Optimal measurement network of pairwise differences, J. Chem. Inf. Model. 59, 4720-4728, 2019, https://doi.org/10.1021/acs.jcim.9b00528.
+
+## How to use
+
+Some examples are provided in examples.py.
 
 The following outlines an example application of the DiffNet: the
 calculation of binding free energies of a set of molecules from
@@ -26,10 +34,13 @@ individual (a.k.a. absolute) and relative binding free energy
 calculations.  (Underscored function names __func__ indicate
 user-defined external functions.)
 
-NOTE: For large networks (number of nodes greater than 80), diffnet does
+NOTE: For large networks (number of nodes greater than 100), diffnet does
 not scale well in memory.  The users may want to replace A_optimize() with 
 the sparse approximation sparse_A_optimal_network() in such cases.
 
+### Binding free energy calculations
+
+```
 import numpy as np
 from diffnet import A_optimize, update_A_optimal
 from diffnet import round_to_integers
@@ -93,7 +104,14 @@ while not converged:
 
 __report_free_energy__( dgi, covar, ...)
 
+```
 
+### Binding free energy calculations with experimental data for 
+### some reference molecules 
 
+Please refer to netbfe.py and the Jupyter notebook netbfe.ipynb to see
+how to use DiffNet for binding free energy calculations when
+experimental binding free energies are available for some reference
+molecules.
 
 
