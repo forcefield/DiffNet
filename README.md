@@ -7,12 +7,13 @@ in the estimated quantities.
 
 ## Prerequisites
 
-DiffNet depends on CVXOPT (http://cvxopt.org) and networkx
-(https://networkx.github.io/).  You can install these two libraries using
+DiffNet depends on [CVXOPT](http://cvxopt.org) and [networkx](https://networkx.github.io/).  You can install these two libraries using
 anaconda:
 
+```
 conda install -c conda-forge cvxopt
 conda install -c anaconda networkx
+```
 
 ## Civil matters
 
@@ -26,7 +27,7 @@ Huafeng Xu, Optimal measurement network of pairwise differences, J. Chem. Inf. M
 
 ## How to use
 
-Some examples are provided in examples.py.
+Some examples are provided in [examples.py](https://github.com/forcefield/DiffNet/blob/master/examples.py).
 
 The following outlines an example application of the DiffNet: the
 calculation of binding free energies of a set of molecules from
@@ -34,7 +35,7 @@ individual (a.k.a. absolute) and relative binding free energy
 calculations.  (Underscored function names __func__ indicate
 user-defined external functions.)
 
-NOTE: For large networks (number of nodes greater than 100), diffnet does
+NOTE: For large networks (number of nodes greater than 200), diffnet does
 not scale well in memory.  The users may want to replace A_optimize() with 
 the sparse approximation sparse_A_optimal_network() in such cases.
 
