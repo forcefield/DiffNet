@@ -16,13 +16,16 @@ The A-optimal is cast as the following SDP.
 
 \begin{equation}
 \min \sum_{i=1}^K u_i
+\label{eq:SDP-objective}
 \end{equation}
 subject to
 \begin{equation}
 n_{ij} \geq 0  \ \forall \{ (i,j)|1 \leq i \leq j \leq K\},
+\label{eq:SDP-positive-n}
 \end{equation}
 \begin{equation}
 \sum_i n_{ii} + \sum_{i<j} n_{ij} = N,
+\label{eq:SDP-sum-n}
 \end{equation}
 and
 \begin{equation}
@@ -31,6 +34,7 @@ and
  F(\{n_{ab}\}) & \vec{e}_i \\
  \vec{e}_i^t & u_i
 \end{array} \right) \geq 0  \ \text{for } i=1,2, \dots, K
+\label{eq:SDP-Fu}
 \end{equation}
 where
 \begin{equation}
@@ -390,5 +394,9 @@ z_i = \left\{
 \end{array}
 \right.
 \end{equation}
+
+The A-optimal can be determined by the same SDP of
+Eqs.~\ref{eq:SDP-objective} to~\ref{eq:SDP-Fu}, but the Fisher
+information matrix $F$ now includes diagonal terms of $\delta_i^{-2}$.
 
 \end{document}
