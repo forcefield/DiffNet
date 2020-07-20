@@ -36,6 +36,20 @@ def diffnet_connectivity( n, src=None, tgt=None):
     g = nx.from_numpy_matrix( n)
     return nx.edge_connectivity( g, src, tgt)
 
+def scale_edge_weight( g, src='weight', dest='scale', beta=0.5):
+    '''
+    Scale the edge weights from between 0 to inf to betweeen 0 and 1.
+    '''
+    scales = dict()
+    weights = np.array(
+        [ g.get_edge_data( e[0], e[1], src)[src] for e in g.edges() ])
+    wm = np.median( weights)
+    # Scale the weights to 2/pi arctan( alpha x) so that the median is scaled
+    # to beta.
+    alpha = np.tan(0.5*beta*np.pi)/wm
+    weights = np.arctan( weights*alpha)*2/np.pi
+    nx.set_edge_attributes( g, dict( zip(g.edges(), weights)), dest)
+
 def draw_diffnet_graph( g, pos=None, ax=None,
                         widthscale=None, nodescale=2.5, node_color=None,
                         origins=['O']):
@@ -65,7 +79,8 @@ def draw_diffnet_graph( g, pos=None, ax=None,
     elif type( pos) == dict:
         mypos = pos
     else:
-        mypos = nx.spring_layout( g)
+        scale_edge_weight( g, src='weight', dest='scale')
+        mypos = nx.spring_layout( g, weight='scale', k=2.5/np.power( K, 0.1))
     
     node_size = nodescale*K
     if node_color is None:
