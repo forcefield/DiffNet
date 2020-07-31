@@ -142,7 +142,7 @@ def networkBFEdG( ddG, isigma2, dG0, delta):
     binding free energy of molecule i.
 
     '''
-    dG, v = MLestimate( ddG, isigma2, dG0, np.sqrt(1./delta))
+    dG, v = MLestimate( ddG, isigma2, dG0, (1./delta)**2)
     return dG
 
 def test_A_optimality_with_reference( s, n, delta, dn=1E-1, ntimes=10):
