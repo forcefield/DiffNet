@@ -553,9 +553,8 @@ def covariance( sij, nij, delta=None):
     s[j][i]^2, and the measurement variance of i is proportional to
     s[i][i]^2.
 
-    nij:  symmetric matrix, where n[i][j] is the fraction of measurements
-    to be performed for the difference between i and j, satisfying
-    \sum_i n[i][i] + \sum_{i<j} n[i][j] = 1.
+    nij:  symmetric matrix, where n[i][j] is the allocation of measurements
+    to be performed for the difference between i and j.
 
     delta: length K vector, delta[i] is the standard deviation on the
     input reference value of x[i] (measured by an
