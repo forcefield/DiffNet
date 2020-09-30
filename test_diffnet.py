@@ -1,4 +1,5 @@
 import numpy as np
+import cvxopt
 from cvxopt import matrix
 from diffnet import *
 import netbfe
@@ -9,7 +10,7 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     Return True if nij is the optimal.
     '''
     K = sij.size[0]
-    C = covariance( sij, nij)
+    C = covariance( cvxopt.div( nij, sij**2))
     fC = dict(
         A = np.trace( C), 
         D = np.log( linalg.det( C)),
@@ -23,7 +24,7 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
         nijp = 0.5*(nijp + nijp.trans()) # Symmetrize
         s = sum_upper_triangle( nijp)
         nijp /= s
-        Cp = covariance( sij, nijp)
+        Cp = covariance( cvxopt.div( nijp, sij**2))
         if (optimality=='A'):
             fCp = np.trace( Cp)
         elif (optimality=='D'):
@@ -71,7 +72,7 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
     nnext = A_optimize( sij, nadd, nsofar)
     ntotal = matrix( nsofar + nnext)
 
-    C = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
+    C = covariance( cvxopt.div( ntotal/sum_upper_triangle(ntotal), matrix(sij)**2))
     trC = np.trace( C)
 
     dtr = np.zeros( ntimes)
@@ -82,7 +83,7 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
         s = sum_upper_triangle( nnextp)
         nnextp *= (nadd/sum_upper_triangle( nnextp))
         ntotal = matrix( nsofar + nnextp)
-        Cp = covariance( matrix(sij), ntotal/sum_upper_triangle(ntotal))
+        Cp = covariance( cvxopt.div( ntotal/sum_upper_triangle(ntotal), matrix(sij)**2 ))
         dtr[t] = np.trace( Cp) - trC
 
     success2 = np.all( dtr[np.abs(dtr/trC) > tol] >= 0)
@@ -126,7 +127,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
     nij = sparse_A_optimal_network( sij, nadd, nsofar, n_measures, connectivity,
                                     True)
     print nij
-    trC = np.trace( covariance( sij, nij))
+    trC = np.trace( covariance( cvxopt.div( nij, sij**2)))
 
     dtr = np.zeros( ntimes)
     for t in xrange( ntimes):
@@ -136,7 +137,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
         s = sum_upper_triangle( nijp)
         nijp *= nadd/s
         
-        trCp = np.trace( covariance( sij, nijp))
+        trCp = np.trace( covariance( cvxopt.div( nijp, sij**2)))
         dtr[t] = trCp - trC
     
     success2 = np.all( dtr >= 0)
@@ -178,9 +179,9 @@ def fabricate_measurements( K=10, sigma=0.1, noerror=True, disconnect=False):
     sij = np.sqrt( 1./invsij2)
     if noerror: sij *= 0.
     for i in xrange(K):
-        xij[i][i] = x0[i]
+        xij[i][i] = x0[i] + sij[i,i]*np.random.randn()
         for j in xrange(i+1, K):
-            xij[i][j] = x0[i] - x0[j] + sij[i][j]*(np.random.rand() - 0.5)
+            xij[i][j] = x0[i] - x0[j] + sij[i][j]*np.random.randn()
             xij[j][i] = -xij[i][j]
 
     if (disconnect >= 1):
@@ -208,7 +209,43 @@ def check_MLest( K=10, sigma=0.1, noerr=True, disconnect=False):
                                                 [None]*(K-disconnect-1)]))
     # Compute the RMSE between the input quantities and the estimation by ML.
     return np.sqrt(np.sum(np.square(xML - x0))/K)
-    
+
+def test_covariance( K=5, nodiag=False, T=4000, tol=0.25):
+    sigma = 10.
+    x0 = 100*np.random.rand( K)
+    xij = np.zeros( (K, K))
+    sij = sigma*np.random.rand( K, K)
+    sij = 0.5*(sij + sij.T)
+    if nodiag:
+        for i in range(K): sij[i,i] = np.inf
+    xML = np.zeros( (K, T))
+    for t in range( T):
+        for i in range(K):
+            if not nodiag:
+                xij[i,i] = x0[i] + sij[i,i]*np.random.randn()
+            for j in range(i+1, K):
+                xij[i,j] = x0[i] - x0[j] + sij[i,j]*np.random.randn()
+                xij[j,i] = -xij[i,j]
+        xML[:, t], vML = MLestimate( xij, 1./sij**2, x0)
+    cov0 = np.cov( xML) 
+    cov = covariance( 1/sij**2)
+    dx = x0 - np.mean( xML, axis=1)
+    if np.max( np.abs( dx)) > sigma/np.sqrt(T):
+        print 'WARNING: MLE deviates from reference by %g' % np.max(np.abs(dx))
+
+    success = True
+    dr = np.minimum( np.abs(cov - cov0), np.abs(cov/cov0 - 1.))
+    if np.max( np.abs( dr)) > tol:
+        print 'FAIL: covariance testing fails with relative deviation of %g' % np.max( np.abs( dr))
+        print 'covariance ='
+        print cov
+        print 'reference ='
+        print cov0
+        success = False
+    else:
+        print 'SUCCESS: covariance testing passed. Relative deviation < %g' % np.max( np.abs( dr))
+    return success
+
 def unitTest( tol=1.e-4):
     if (True):
         K = 10
@@ -275,7 +312,7 @@ def unitTest( tol=1.e-4):
     results = optimize( sij)
     for o in [ 'D', 'A', 'E', 'Etree' ]:
         nij = results[o]
-        C = covariance( sij, nij)
+        C = covariance( cvxopt.div( nij, sij**2))
         print '%s-optimality' % o
         print 'n (sum=%g):' % sum_upper_triangle( nij)
         print nij
@@ -298,6 +335,13 @@ def unitTest( tol=1.e-4):
     # Check sparse A-optimal
     if (check_sparse_A_optimal( sij)):
         print 'Sparse A-optimal passed!'
+
+    # Test covariance computation
+    if (test_covariance(5, T=4000)):
+        print 'Covariance computation passed!'
+        
+    if (test_covariance(5, T=4000, nodiag=True)):
+        print 'Covariance with only relative values passed!'
 
 if __name__ == '__main__':
     unitTest()

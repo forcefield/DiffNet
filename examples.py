@@ -159,13 +159,13 @@ def benchmark_diffnet( sij_generator, ntimes=100,
             cstn = const_allocation( sij, 'n'),
             csts = const_allocation( sij, 'std'),
             cstv = const_allocation( sij, 'var')))
-        CMSTn = covariance( sij, results['MSTn'])
+        CMSTn = covariance( cvxopt.div( results['MSTn'], sij**2))
         DMSTn = np.log(linalg.det( CMSTn))
         AMSTn = np.trace( CMSTn)
         EMSTn = np.max(linalg.eig( CMSTn)[0]).real
         for o in results:
             n = results[o]
-            C = covariance( sij, n)
+            C = covariance( cvxopt.div( n, sij**2))
             D = np.log(linalg.det( C))
             A = np.trace( C)
             E = np.max(linalg.eig( C)[0]).real
@@ -224,12 +224,12 @@ def benchmark_sparse_net( K=30, measure_per=3, connectivity=3,
     for t in xrange( ntimes):
         sij = random_net_sij_generator( K, sii_offset, sij_min, sij_max)
         nij = A_optimize( sij)
-        trC = np.trace( covariance( sij, nij))
+        trC = np.trace( covariance( cvxopt.div(nij, sij**2)))
         nijp = sparse_A_optimal_network( sij, nsofar, nadd, n_measure, connectivity)
         nijp = np.asarray( nijp)
         nijp[nijp < ncutoff] = 0
         nijp = matrix( nijp)
-        trCp = np.trace( covariance( sij, nijp))
+        trCp = np.trace( covariance( cvxopt.div(nijp, sij**2)))
         ratio[t] = trCp/trC
         
     return np.mean(ratio), np.std(ratio)

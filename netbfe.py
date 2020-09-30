@@ -150,7 +150,7 @@ def test_A_optimality_with_reference( s, n, delta, dn=1E-1, ntimes=10):
     Return True if n is the A-optimal.
     '''
     K = n.size[0]
-    cov = covariance( s, n, delta)
+    cov = covariance( cvxopt.div( n, s**2), delta)
     f = np.trace( cov)
     df = np.zeros( ntimes)
     for t in xrange( ntimes):
@@ -159,7 +159,7 @@ def test_A_optimality_with_reference( s, n, delta, dn=1E-1, ntimes=10):
         n1 = 0.5*(n1 + n1.trans()) # Symmetrize
         tot = sum_upper_triangle( n1)
         n1 /= tot
-        Cp = covariance( s, n1, delta)
+        Cp = covariance( cvxopt.div(n1, s**2), delta)
         fp = np.trace( Cp)
         df[t] = fp - f
 
@@ -203,7 +203,7 @@ def unit_test():
 
     dG = networkBFEdG( ddG, isigma2, dG0p, delta)
     
-    cov = covariance( s, n, delta)
+    cov = covariance( cvxopt.div(n, s**2), delta)
     err = np.sqrt(np.diag( cov))
     deltaG = np.abs(dG - dG0)
     

@@ -543,18 +543,14 @@ def MLestimate( xij, invsij2, x0=None, di2=None):
 
     return x, v
 
-def covariance( sij, nij, delta=None):
+def covariance( invv, delta=None):
     '''Compute the covariance matrix of the difference network.
 
     Args:
     
-    sij:  KxK symmetric matrix, where the measurement variance of the
-    difference between i and j is proportional to s[i][j]^2 =
-    s[j][i]^2, and the measurement variance of i is proportional to
-    s[i][i]^2.
-
-    nij:  symmetric matrix, where n[i][j] is the allocation of measurements
-    to be performed for the difference between i and j.
+    invv: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is 1/invv[i,j] = sigma[i,j]^2, the measurement
+    variance of i is 1/invv[i][i] = sigma[i,i]^2.
 
     delta: length K vector, delta[i] is the standard deviation on the
     input reference value of x[i] (measured by an
@@ -568,12 +564,15 @@ def covariance( sij, nij, delta=None):
 
     The covariance matrix is the inverse of the Fisher information matrix:
 
-    F_{i,i} = n_{ii}/s_{ii}^2 + \sum_{k!= i} n_{ik}/s_{ij}^2
-    F_{i,j} = -n_{ij}/s_{ij}^2
+    F[i,i] = invv[i,i] + \sum_{k!= i} invv[i,k]
+    F[i,j] = -invv[i,j]
 
     '''
-    K = sij.size[0]
-    f = cvxopt.mul( nij, cvxopt.div( 1., sij)**2)
+    invv = matrix(invv)
+    K = invv.size[0]
+    f = invv
+    if np.all( np.diag(f) == 0) and delta is None:
+        return covariance_singular_Fisher( f)
     F = np.diag( np.sum(f, axis=1) )
     for k in xrange(K): f[k,k] = 0
     F -= f
@@ -583,6 +582,44 @@ def covariance( sij, nij, delta=None):
     C = linalg.inv( F)
     return C
 
+def covariance_singular_Fisher( invv):
+    ''' Compute the covariance matrix of the difference network, when
+    invv[i][i] = 0 for all i, thus the Fisher information matrix is singular.
+
+    In this case, we constrain the mean of { x_i } to a prescribed value, 
+    which makes the covariance well defined.  The covariance can be determined
+    by 
+
+    1' C = 0
+    F C + 1/K = I
+
+    Args:
+
+    invv: KxK symmetric matrix, where the measurement variance of the
+    difference between i and j is 1/invv[i,j] = sigma[i,j]^2, the measurement
+    variance of i is 1/invv[i][i] = sigma[i,i]^2.
+
+    Return:
+
+    KxK symmetric matrix for the covariance matrix of the corresponding 
+    difference network.
+    '''
+    invv = matrix(invv)
+    K = invv.size[0]
+    F = np.diag( np.sum( invv, axis=1))
+    F -= invv
+
+    F1 = np.zeros( (K+1, K+1))
+    F1[0, :K] = np.ones( K)
+    F1[1:, K] = np.ones( K)
+    F1[1:, :K] = F
+    I0 = np.zeros( (K+1, K))
+    I0[1:, :] = np.diag( np.ones(K))
+    
+    C1 = np.linalg.solve( F1, I0)
+    C = C1[:K, :]
+    return C
+    
 def round_to_integers( n):
     '''
     Round the allocations n_{e} to nearest integers i(n_e) = \floor{n_e} or
