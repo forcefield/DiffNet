@@ -659,20 +659,25 @@ def Aopt_GhA( si2, nsofar=None, di2=None, G_as_function=False):
     # h vector.
     h = matrix( 0., (K*(K+1)/2 + K*(K+1)*(K+1), 1))
     # F := Fisher matrix
-    if nsofar is not None or di2 is not None:
-        if nsofar is None:
-            F = matrix( 0., (K, K))
-            F[::K+1] = di2
-        else:
-            F = Fisher_matrix( si2, nsofar, di2)
+    if nsofar is None:
+        F = matrix( 0., (K, K))
     else:
-        F = None
+        F = Fisher_matrix( si2, nsofar, di2)
+    if di2 is not None: F[::K+1] = di2
+    elif np.all( np.diag( si2) == 0):
+        # If the diagonal elements of 1/s[i,i]^2 are all zero, the Fisher
+        # information matrix is singular, and the quantities are determined
+        # up to a constant.  In this case, we constrain the
+        # mean of the quantities.  This corresponds to adding a constant
+        # omega to the Fisher matrix.  The optimal allocation does not 
+        # depend on the value of omega.
+        omega = 1.
+        F += omega
 
     row = K*(K+1)/2
     for i in xrange(K):
-        if F is not None:
-            for j in xrange(K):
-                h[row + j*(K+1) : row + (j+1)*(K+1)-1] = F[:,j]
+        for j in xrange(K):
+            h[row + j*(K+1) : row + (j+1)*(K+1)-1] = F[:,j]
         h[row + (i+1)*(K+1)-1] = 1.  # e_i^t
         h[row + K*(K+1) + i] = 1.    # e_i
         row += (K+1)*(K+1)
@@ -1151,12 +1156,22 @@ def test_sumdR2( ntrials=10, tol=1e-9):
     print 'Timing for aligned sum dR: %f seconds per call.' % (tfast/ntrials)
     return success
 
+def test_relative_only():
+    K = 5
+    np.random.seed( 1)
+    sij = matrix( np.random.rand( K*K), (K,K))
+    sij = 0.5*(sij + sij.T)
+    for i in range(K): sij[i,i] = np.inf
+    nij = A_optimize_fast( sij)
+    print nij
+
 def unit_test():
     test_Gfunc( ntrials=100)
     test_kkt_solver( ntrials=100)
     test_sumdR2()
     
 if __name__ == '__main__':
+    test_relative_only()
     K = 200
     sij = matrix( np.random.rand( K*K), (K, K))
     nsofar = matrix( 0.2*np.random.rand( K*K), (K, K))

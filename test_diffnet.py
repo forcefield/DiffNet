@@ -11,12 +11,16 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
     '''
     K = sij.size[0]
     C = covariance( cvxopt.div( nij, sij**2))
-    fC = dict(
-        A = np.trace( C), 
-        D = np.log( linalg.det( C)),
-        E = np.max( linalg.eig( C)[0]).real,
-        Etree = np.max( linalg.eig( C)[0]).real
-    )
+    fC = dict()
+    if optimality=='A':
+        fC['A'] = np.trace( C) 
+    if optimality=='D':
+        fC['D'] = np.log( linalg.det( C))
+    if optimality=='E':
+        fC['E'] = np.max( linalg.eig( C)[0]).real
+    if optimality=='Etree':
+        fC['Etree'] = np.max( linalg.eig( C)[0]).real
+    
     df = np.zeros( ntimes)
     for t in xrange( ntimes):
         zeta = matrix( 1. + 2*delta*(np.random.rand(  K, K) - 0.5))
@@ -149,6 +153,20 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
 
     return success and success2
 
+def check_relative_only_A_optimal( sij):
+    '''
+    '''
+    sij = matrix(sij)
+    K = sij.size[0]
+    for i in range(K): sij[i,i] = np.inf
+    nij = A_optimize( sij)
+    success = check_optimality( sij, nij)
+    if (not success):
+        print 'FAIL: A_optimize for relative-only measurements did not generate optimal.'
+    else:
+        print 'SUCCESS: A_optimize for relative-only measurements.'
+    return success
+    
 def check_hessian( dF, d2F, x0):
     '''
     Check the Hessian for correctness.
@@ -268,7 +286,6 @@ def unitTest( tol=1.e-4):
                         [ 0.1, 1., 0.1 ],
                         [ 0.1, 0.1, 1.2 ]])
 
-
     from scipy.optimize import check_grad
 
     def F( x):
@@ -335,6 +352,10 @@ def unitTest( tol=1.e-4):
     # Check sparse A-optimal
     if (check_sparse_A_optimal( sij)):
         print 'Sparse A-optimal passed!'
+
+    # Check A-optimal when only relative measurements are included.
+    if (check_relative_only_A_optimal( sij)):
+        print 'Relative-only A-optimal passed!'
 
     # Test covariance computation
     if (test_covariance(5, T=4000)):
