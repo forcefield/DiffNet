@@ -64,12 +64,12 @@ def mockupBFEresults( n, s, dG0):
 
     K = n.size[0]
     dG = matrix( 0., n.size)
-    for i in xrange(K):
+    for i in range(K):
         if n[i,i] > 0:
             # results for absolute binding free energy.
             dG[i,i] = dG0[i] 
             dG[i,i] += 2*np.sqrt(1/isigma2[i,i])*(np.random.rand() - 0.5)
-        for j in xrange(i+1, K):
+        for j in range(i+1, K):
             if n[i,j] > 0:
                 ddG = dG0[i] - dG0[j] 
                 ddG += 2*np.sqrt(1./isigma2[i,j])*(np.random.rand() - 0.5)
@@ -153,7 +153,7 @@ def test_A_optimality_with_reference( s, n, delta, dn=1E-1, ntimes=10):
     cov = covariance( cvxopt.div( n, s**2), delta)
     f = np.trace( cov)
     df = np.zeros( ntimes)
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         zeta = matrix( 1. + 2*dn*(np.random.rand(  K, K) - 0.5))
         n1 = cvxopt.mul( n, zeta)
         n1 = 0.5*(n1 + n1.trans()) # Symmetrize
@@ -185,7 +185,7 @@ def unit_test():
     # The experimental values of the molecules not in the references 
     # will be unavailable.
     if references is not None:
-        for i in xrange( K):
+        for i in range( K):
             if i not in references:
                 dG0p[i] = None
                 delta[i] = np.infty

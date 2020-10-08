@@ -22,7 +22,7 @@ def check_optimality( sij, nij, optimality='A', delta=1E-1, ntimes=10):
         fC['Etree'] = np.max( linalg.eig( C)[0]).real
     
     df = np.zeros( ntimes)
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         zeta = matrix( 1. + 2*delta*(np.random.rand(  K, K) - 0.5))
         nijp = cvxopt.mul( nij, zeta)
         nijp = 0.5*(nijp + nijp.trans()) # Symmetrize
@@ -80,7 +80,7 @@ def check_update_A_optimal( sij, delta=5e-1, ntimes=10, tol=1e-5):
     trC = np.trace( C)
 
     dtr = np.zeros( ntimes)
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         zeta = matrix( 1. + 2*delta*(np.random.rand( K, K) - 0.5))
         nnextp = cvxopt.mul( nnext, zeta)
         nnextp = 0.5*(nnextp + nnextp.trans())
@@ -134,7 +134,7 @@ def check_sparse_A_optimal( sij, ntimes=10, delta=1e-1, tol=1e-5):
     trC = np.trace( covariance( cvxopt.div( nij, sij**2)))
 
     dtr = np.zeros( ntimes)
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         zeta = matrix( 1. + 2*delta*(np.random.rand(  K, K) - 0.5))
         nijp = cvxopt.mul( nij, zeta)
         nijp = 0.5*(nijp + nijp.trans()) # Symmetrize
@@ -180,7 +180,7 @@ def check_hessian( dF, d2F, x0):
 
     N = len(x0)
     esqr = 0.
-    for i in xrange( N):
+    for i in range( N):
         def func( x):
             return dF(x)[i]
         def dfunc( x):
@@ -196,21 +196,21 @@ def fabricate_measurements( K=10, sigma=0.1, noerror=True, disconnect=False):
     invsij2 = 0.5*(invsij2 + np.transpose( invsij2))
     sij = np.sqrt( 1./invsij2)
     if noerror: sij *= 0.
-    for i in xrange(K):
+    for i in range(K):
         xij[i][i] = x0[i] + sij[i,i]*np.random.randn()
-        for j in xrange(i+1, K):
+        for j in range(i+1, K):
             xij[i][j] = x0[i] - x0[j] + sij[i][j]*np.random.randn()
             xij[j][i] = -xij[i][j]
 
     if (disconnect >= 1):
         # disconnect the origin and thus eliminate the individual measurements
-        for i in xrange(K): invsij2[i][i] = 0
+        for i in range(K): invsij2[i][i] = 0
     if (disconnect >= 2):
         # disconnect the network into the given number of disconnected
         # components.
-        for i in xrange( K):
+        for i in range( K):
             c1 = i % disconnect
-            for j in xrange( i+1, K):
+            for j in range( i+1, K):
                 c2 = j % disconnect
                 if (c1 != c2):
                     invsij2[i][j] = invsij2[j][i] = 0

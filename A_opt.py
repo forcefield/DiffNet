@@ -19,14 +19,14 @@ def solution_to_nij( sol, K, measure_indices=None):
     x = sol['x']
     # print(x)
     n = matrix( 0., (K, K))
-    for i in xrange(K):
+    for i in range(K):
         if measure_indices is not None:
             m = measure_indices.get( (i,i), None)
             if m is not None:
                 n[i,i] = x[m]
         else:
             n[i,i] = x[i]
-        for j in xrange(i+1, K):
+        for j in range(i+1, K):
             if measure_indices is not None:
                 m = measure_indices.get( (i,j), None)
                 if m is None: continue
@@ -55,8 +55,8 @@ def conelp_solution_to_nij( x, K):
     '''
     n = matrix( 0.0, (K, K))
     p = 0
-    for i in xrange(K):
-        for j in xrange(i, K):
+    for i in range(K):
+        for j in range(i, K):
             n[i,j] = n[j,i] = x[p]
             p += 1
     return n
@@ -94,11 +94,11 @@ def pairwise_diff( x, y, n):
     '''
     k = 0
     r = x.size[0]
-    for i in xrange(n):
+    for i in range(n):
         #y[:,k] = x[:,i]
         blas.copy( x, y, n=r, offsetx=i*r, offsety=k*r)
         k+=1
-        for j in xrange(i+1, n):
+        for j in range(i+1, n):
             #y[:,k] = x[:,i] - x[:,j]
             blas.copy( x, y, n=r, offsetx=i*r, offsety=k*r)
             blas.axpy( x, y, alpha=-1, n=r, offsetx=j*r, offsety=k*r)
@@ -119,11 +119,11 @@ def congruence_matrix( r, W, offset=0):
     '''
     K = r.size[0]
     ij = 0
-    for i in xrange( K):
-        for j in xrange( K):
+    for i in range( K):
+        for j in range( K):
             ab = 0
-            for a in xrange( K):
-                for b in xrange( K):
+            for a in range( K):
+                for b in range( K):
                     W[offset+ij, offset+ab] = r[a,i]*r[b,j]
                     ab += 1
             ij += 1
@@ -134,8 +134,8 @@ def symmetrize_matrix( x, n, xstart=0):
     Given a sequence x representing the lower triangle of a symmetric square
     nxn matrix, fill in the upper triangle with symmetric values.
     '''
-    for a in xrange(n):
-        for b in xrange(a+1, n):
+    for a in range(n):
+        for b in range(a+1, n):
             x[xstart+b*n+a] = x[xstart+a*n+b]
 
 def tri2symm( x, n):
@@ -146,7 +146,7 @@ def tri2symm( x, n):
     '''
     y = matrix( 0., (n, n))
     p = 0
-    for i in xrange( n):
+    for i in range( n):
         y[i:,i] = x[p:p+n-i]
         y[i, i:] = y[i:, i].T
         p += (n-i)
@@ -202,7 +202,7 @@ def sumdR2_aligned( Ris, K):
     #  RK[:,1]  R2[:,2]  ... RK[:,K]
     KR = matrix( 0., (K*K, K))
     start = 0
-    for i in xrange(K):
+    for i in range(K):
         KR[start:start+K, :] = Ris[i][:K,:K]
         start += K
     
@@ -245,13 +245,13 @@ def sumdR2_aligned( Ris, K):
     ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
     start = 0
     bsize = K*(K+1)/2
-    for i in xrange(K):
+    for i in range(K):
         ddR2 += ddRs[i::K, :]
     return ddR2
 
 def sumdR2( Ris, K):
     ddR2 = matrix( 0., (K*(K+1)/2, K*(K+1)/2))
-    for i in xrange(K):
+    for i in range(K):
         Ri = Ris[i]
         # dR[:(a,b)] = R[:,a] - R[:,b]
         dR = matrix( 0., (K, K*(K+1)/2))
@@ -288,8 +288,8 @@ def Aopt_KKT_solver( si2, W):
     di2s = dis**2
 
     # R_i = r_i^{-t}r_i^{-1} 
-    Ris = [ matrix(0.0, (K+1, K+1)) for i in xrange(K) ]
-    for i in xrange(K):
+    Ris = [ matrix(0.0, (K+1, K+1)) for i in range(K) ]
+    for i in range(K):
         blas.gemm( rtis[i], rtis[i], Ris[i], transB = 'T')
 
     ddR2 = sumdR2( Ris, K)
@@ -297,7 +297,7 @@ def Aopt_KKT_solver( si2, W):
     # upper triangular representation si2ab[(a,b)] := si2[a,b]
     si2ab = matrix( 0., (K*(K+1)/2, 1))
     p = 0
-    for i in xrange(K):
+    for i in range(K):
         si2ab[p:p+(K-i)] = si2[i:,i]
         p += (K-i)
 
@@ -321,8 +321,8 @@ def Aopt_KKT_solver( si2, W):
     Bm[:K*(K+1)/2,:K*(K+1)/2] = cvxopt.mul( si2q, ddR2)
 
     row = 0
-    for a in xrange(K):
-        for b in xrange(a, K):
+    for a in range(K):
+        for b in range(a, K):
             Bm[row, row] += di2s[row] # d_{ab}^{-2} n_{ab}
             row += 1
     assert(K*(K+1)/2 == row)
@@ -333,19 +333,19 @@ def Aopt_KKT_solver( si2, W):
     # g_i^t F g_i + R_{i,K+1,K+1}^2 u_i = pi - L_{i,K+1,K+1}
     dg = matrix( 0., (K, K*(K+1)/2))
     g = matrix( 0., (K, K))
-    for i in xrange(K):
+    for i in range(K):
         g[i,:] = Ris[i][K,:K]
     # dg[:,(a,b)] = g[a] - g[b] if a!=b else g[a]
     pairwise_diff( g, dg, K)
     dg2 = dg**2
     # dg2 := s[(a,b)]^{-2} dg[(a,b)]^2
-    for i in xrange( K):
+    for i in range( K):
         dg2[i,:] = cvxopt.mul( si2ab.T, dg2[i,:])
 
     Bm[K*(K+1)/2:K*(K+1)/2+K,:-K] = dg2
     # Diagonal coefficients for u_i.
     uoffset = K*(K+1)/2
-    for i in xrange(K):
+    for i in range(K):
         RiKK = Ris[i][K,K]
         Bm[uoffset+i,uoffset+i] = RiKK**2
 
@@ -397,7 +397,7 @@ def Aopt_KKT_solver( si2, W):
             zp[:] = z[:]
             default_solver( xp, yp, zp)
             offset = K*(K+1)/2
-            for i in xrange(K):
+            for i in range(K):
                 symmetrize_matrix( zp, K+1, offset)
                 offset += (K+1)*(K+1)
 
@@ -432,10 +432,10 @@ def Aopt_KKT_solver( si2, W):
 
         dL = matrix( 0., (K*(K+1)/2, 1))
         ab = 0
-        for a in xrange(K):
+        for a in range(K):
             dL[ab] = Ls[a,a]
             ab += 1
-            for b in xrange(a+1,K):
+            for b in range(a+1,K):
                 dL[ab] = Ls[a,a] + Ls[b,b] - 2*Ls[b,a]
                 ab += 1
 
@@ -470,7 +470,7 @@ def Aopt_KKT_solver( si2, W):
 
         F = Fisher_matrix( si2, nab)
         offset = K*(K+1)/2
-        for i in xrange( K):
+        for i in range( K):
             start, end = i*(K+1)*(K+1), (i+1)*(K+1)*(K+1)
             Fu = matrix( 0.0, (K+1, K+1))
             Fu[:K,:K] = F
@@ -484,7 +484,7 @@ def Aopt_KKT_solver( si2, W):
 
         if (TEST_KKT):
             offset = K*(K+1)/2
-            for i in xrange(K):
+            for i in range(K):
                 symmetrize_matrix( z, K+1, offset)
                 offset += (K+1)*(K+1)
             dz = np.max(np.abs(z - zp))
@@ -567,7 +567,7 @@ def Aopt_Gfunc( si2, x, y, alpha=1.0, beta=0.0, trans='N'):
         Fu = matrix( 0., (K+1, K+1))
         Fu[:K,:K] = F
         start = hkkp1
-        for i in xrange(K):
+        for i in range(K):
             Fu[K,K] = u[i]
             y[start:start+kp1sqr] = -Fu[:] + beta*y[start:start+kp1sqr]
             start += kp1sqr
@@ -576,16 +576,16 @@ def Aopt_Gfunc( si2, x, y, alpha=1.0, beta=0.0, trans='N'):
         xKK = alpha*x[hkkp1+kp1sqr-1::kp1sqr]
         start = hkkp1
         xsum = matrix( 0., (kp1sqr, 1))
-        for i in xrange(K):
+        for i in range(K):
             xsum += x[start:start+kp1sqr]
             start += kp1sqr
         xsum *= alpha
         xsum = matrix( xsum, (K+1, K+1))
         ab = 0
-        for a in xrange(K):
+        for a in range(K):
             xab[ab] += si2[a,a]*xsum[a,a]
             ab += 1
-            for b in xrange(a+1, K):
+            for b in range(a+1, K):
                 xab[ab] += si2[b,a]*(xsum[a,a] + xsum[b,b] - 2*xsum[b,a])
                 ab += 1
         y[:hkkp1] = -xab + beta*y[:hkkp1]
@@ -625,35 +625,35 @@ def Aopt_GhA( si2, nsofar=None, di2=None, G_as_function=False):
         Gs = []
         # Gs = np.zeros( nrows*ncols)
         # -I_{K*(K+1)/2} identity matrix
-        Gs.extend( [ ( i, i, -1. ) for i in xrange(K*(K+1)/2) ])
+        Gs.extend( [ ( i, i, -1. ) for i in range(K*(K+1)/2) ])
         # Gs[:K*(K+1)/2*nrows:nrows+1] = -1.  
         
         skip = K*(K+1)/2
         # vec( [ V_{ij}, 0; 0, 0 ])
         col = 0
-        for i in xrange(K):
+        for i in range(K):
             # Skip the first K*(K+1)/2 rows 
             Gs.extend( [ (skip+i*(K+2)+t*(K+1)*(K+1), col, -si2[i,i])
-                         for t in xrange( K) ])
+                         for t in range( K) ])
             # offset = col*nrows + K*(K+1)/2  
             # Gs[offset+i*(K+2) : (col+1)*nrows : (K+1)*(K+1)] = si2[i,i]
             col += 1
-            for j in xrange(i+1, K):
+            for j in range(i+1, K):
                 Gs.extend( [ (skip+i*(K+2) + t*(K+1)*(K+1), col, -si2[i,j])
-                             for t in xrange(K) ])
+                             for t in range(K) ])
                 Gs.extend( [ (skip+j*(K+2) + t*(K+1)*(K+1), col, -si2[i,j])
-                             for t in xrange(K) ])
+                             for t in range(K) ])
                 Gs.extend( [ (skip+i*(K+1) + j + t*(K+1)*(K+1), col, si2[i,j])
-                             for t in xrange(K) ])
+                             for t in range(K) ])
                 Gs.extend( [ (skip+j*(K+1) + i + t*(K+1)*(K+1), col, si2[i,j])
-                             for t in xrange(K) ])
+                             for t in range(K) ])
                 col += 1
         
         # vec( [ 0, 0; 0, 1 ])
         
         Gs.extend( [ (skip+(i+1)*(K+1)*(K+1)-1, K*(K+1)/2+i, -1.)
-                     for i in xrange(K) ])
-        I, J, X = [ [ ijx[p] for ijx in Gs ] for p in xrange(3) ]
+                     for i in range(K) ])
+        I, J, X = [ [ ijx[p] for ijx in Gs ] for p in range(3) ]
         G = spmatrix( X, I, J, (nrows, ncols))
 
     # h vector.
@@ -675,8 +675,8 @@ def Aopt_GhA( si2, nsofar=None, di2=None, G_as_function=False):
         F += omega
 
     row = K*(K+1)/2
-    for i in xrange(K):
-        for j in xrange(K):
+    for i in range(K):
+        for j in range(K):
             h[row + j*(K+1) : row + (j+1)*(K+1)-1] = F[:,j]
         h[row + (i+1)*(K+1)-1] = 1.  # e_i^t
         h[row + K*(K+1) + i] = 1.    # e_i
@@ -737,13 +737,13 @@ def A_optimize_fast( sij, N=1., nsofar=None, delta=None,
     
     if delta is not None:
         di2 = np.array( [ 1./delta[i]**2 if delta[i] is not None else 0. 
-                          for i in xrange(K)])
+                          for i in range(K)])
     else:
         di2 = None
 
     if only_include_measurements is not None:
-        for i in xrange(K):
-            for j in xrange(i, K):
+        for i in range(K):
+            for j in range(i, K):
                 if not (i,j) in only_include_measurements:
                     # Set the s[i,j] to infinity, thus excluding the pair.
                     si2[i,j] = si2[j,i] = 0.
@@ -817,16 +817,16 @@ def A_optimize_sdp( sij):
     # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
     # column-major vector representing the KxK matrix of U_m augmented
     # by a length K vector, hence the dimension (K+1)x(K+1).
-    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in range( K) ]
     G0 = []
-    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    hs = [ matrix( 0., (K+1, K+1)) for k in range( K) ]
     
-    for i in xrange( K):
+    for i in range( K):
         # The index of matrix element (i,i) in column-major representation
         # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
         # Gs[0][i*(K+2), i] = 1./(sij[i,i]*sij[i,i])
         G0.append( (i*(K+2), i, -1./(sij[i,i]*sij[i,i])))
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             m = measurement_index( i, j, K)
             # The index of matrix element (i,j) in column-major representation
             # of a (K+1)x(K+1) matrix is j*(K+1) + i
@@ -842,7 +842,7 @@ def A_optimize_sdp( sij):
     # Gs[0] *= -1.
     
     Gs = []
-    for k in xrange( K):
+    for k in range( K):
         # if (k>0): Gs[k][:,:M] = Gs[0][:,:M]
         # for the term u_k [ [0, 0], [0, 1] ]
         # Gs[k][-1, M+k] = -1.
@@ -929,11 +929,11 @@ def update_A_optimal_sdp( sij, nadd, nsofar, only_include_measurements=None):
     # G matrix, of dimension ((K+1)*(K+1), (M+K)).  Each column is a
     # column-major vector representing the KxK matrix of U_m augmented
     # by a length K vector, hence the dimension (K+1)x(K+1).
-    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in xrange( K) ]
+    # Gs = [ matrix( 0., ((K+1)*(K+1), (M+K))) for k in range( K) ]
     G0 = []
-    hs = [ matrix( 0., (K+1, K+1)) for k in xrange( K) ]
+    hs = [ matrix( 0., (K+1, K+1)) for k in range( K) ]
     
-    for i in xrange( K):
+    for i in range( K):
         # The index of matrix element (i,i) in column-major representation
         # of a (K+1)x(K+1) matrix is i*(K+1 + 1) 
         v2 = 1./(sij[i,i]*sij[i,i])
@@ -946,7 +946,7 @@ def update_A_optimal_sdp( sij, nadd, nsofar, only_include_measurements=None):
             # Gs[0][i*(K+2), i] = v2
             G0.append( (i*(K+2), i, -v2))
         hs[0][i,i] += nsofar[i,i]*v2
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             # The index of matrix element (i,j) in column-major representation
             # of a (K+1)x(K+1) matrix is j*(K+1) + i
             v2 = 1./(sij[i,j]*sij[i,j])
@@ -970,7 +970,7 @@ def update_A_optimal_sdp( sij, nadd, nsofar, only_include_measurements=None):
     # Gs[0] *= -1.
 
     Gs = []
-    for k in xrange( K):
+    for k in range( K):
         if (k>0): 
             # Gs[k][:,:M] = Gs[0][:,:M]
             hs[k][:K,:K] = hs[0][:K,:K]
@@ -1017,17 +1017,17 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
         return Aopt_KKT_solver( si2, W)
 
     success = True
-    for t in xrange( ntrials):
+    for t in range( ntrials):
         x = matrix( 1*(np.random.rand( K*(K+1)/2+K) - 0.5), (K*(K+1)/2+K, 1))
         y = matrix( np.random.rand( 1), (1,1))
         z = matrix( 0.0, (K*(K+1)/2 + K*(K+1)*(K+1), 1))
         z[:K*(K+1)/2] = 5.*(np.random.rand( K*(K+1)/2) - 0.5)
         offset = K*(K+1)/2
-        for i in xrange(K):
+        for i in range(K):
             r = 10*(np.random.rand( (K+1)*(K+2)/2) - 0.3)
             p = 0
-            for a in xrange(K+1):
-                for b in xrange(a, K+1):
+            for a in range(K+1):
+                for b in range(a, K+1):
                     z[offset + a*(K+1) + b] = r[p]
                     z[offset + b*(K+1) + a] = r[p]
                     p+=1
@@ -1035,7 +1035,7 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
         
         ds = matrix( 10*np.random.rand( K*(K+1)/2), (K*(K+1)/2, 1))
         rs = [ matrix(np.random.rand( (K+1)*(K+1)) - 0.3, (K+1, K+1)) 
-               for i in xrange(K) ]
+               for i in range(K) ]
         W = dict( d=ds,
                   di=cvxopt.div(1., ds),
                   r=rs,
@@ -1055,7 +1055,7 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
         dx = xp - x
         dy = yp - y
         offset = K*(K+1)/2
-        for i in xrange(K):
+        for i in range(K):
             symmetrize_matrix( zp, K+1, offset)
             symmetrize_matrix( z, K+1, offset)
             offset += (K+1)*(K+1)
@@ -1081,7 +1081,7 @@ def test_Gfunc( ntrials=10, tol=1e-10):
 
     success = True
 
-    for i in xrange( ntrials):
+    for i in range( ntrials):
         trans = 'N'
         nx = K*(K+1)/2+K
         ny = K*(K+1)/2+K*(K+1)*(K+1)
@@ -1105,10 +1105,10 @@ def test_Gfunc( ntrials=10, tol=1e-10):
         x = matrix( np.random.rand( nx), (nx, 1))
         y = matrix( 1.e6*np.random.rand( ny), (ny, 1))
         
-        for i in xrange(K):
+        for i in range(K):
             start = K*(K+1)/2 + i*(K+1)*(K+1)
-            for a in xrange(K+1):
-                for b in xrange(a+1, K+1):
+            for a in range(K+1):
+                for b in range(a+1, K+1):
                     x[start+a*(K+1)+b] = x[start+b*(K+1)+a]
     
         yp = y[:]
@@ -1131,9 +1131,9 @@ def test_sumdR2( ntrials=10, tol=1e-9):
     tnaive = tfast = 0.
     
     success = True
-    for t in xrange(ntrials):
-        Ris = [ matrix(np.random.rand(K*K), (K,K)) for i in xrange(K) ]
-        for i in xrange(K):
+    for t in range(ntrials):
+        Ris = [ matrix(np.random.rand(K*K), (K,K)) for i in range(K) ]
+        for i in range(K):
             Ris[i] = 0.5*(Ris[i].T + Ris[i])
         
         tstart = time.time()
@@ -1181,7 +1181,7 @@ if __name__ == '__main__':
     if (False):
         connectivity = 5
         only_include_measurements = set()
-        for i in xrange( K):
+        for i in range( K):
             js = i + np.floor((K-i)*np.random.rand(connectivity)).astype('int')
             for j in js:
                 only_include_measurements.add( (i,j))
