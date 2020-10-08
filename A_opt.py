@@ -15,9 +15,9 @@ def solution_to_nij( sol, K, measure_indices=None):
     CVXOPT solution.
     '''
     if sol['status'] != 'optimal':
-        raise ValueError, sol['status']
+        raise ValueError(sol['status'])
     x = sol['x']
-    # print x
+    # print(x)
     n = matrix( 0., (K, K))
     for i in xrange(K):
         if measure_indices is not None:
@@ -492,35 +492,35 @@ def Aopt_KKT_solver( si2, W):
             dy = np.max(np.abs(y - yp))
             tol = 1e-5
             if dx > tol:
-                print 'dx='
-                print dx
-                print x
-                print xp
+                print('dx=')
+                print(dx)
+                print(x)
+                print(xp)
             if dy > tol:
-                print 'dy='
-                print dy
-                print y
-                print yp
+                print('dy=')
+                print(dy)
+                print(y)
+                print(yp)
             if dz > tol:
-                print 'dz='
-                print dz
-                print z
-                print zp
+                print('dz=')
+                print(dz)
+                print(z)
+                print(zp)
             if dx > tol or dy > tol or dz > tol:
                 for i, (r, rti) in enumerate( zip(ris, rtis)):
-                    print 'r[%d]=' % i
-                    print r
-                    print 'rti[%d]=' % i
-                    print rti
-                    print 'rti.T*r='
-                    print rti.T*r
+                    print('r[%d]=' % i)
+                    print(r)
+                    print('rti[%d]=' % i)
+                    print(rti)
+                    print('rti.T*r=')
+                    print(rti.T*r)
                 for i, d in enumerate( ds):
-                    print 'd[%d]=%g' % (i, d)
-                print 'x0, y0, z0='
-                print x0
-                print y0
-                print z0
-                print Bm0
+                    print('d[%d]=%g' % (i, d))
+                print('x0, y0, z0=')
+                print(x0)
+                print(y0)
+                print(z0)
+                print(Bm0)
 
     ###
     #  END of kkt_solver.
@@ -1064,10 +1064,10 @@ def test_kkt_solver( ntrials=5, tol=1e-6):
         dx, dy, dz = np.max(np.abs(dx)), np.max(np.abs(dy)), np.max(np.abs(dz))
         
         if tol < np.max( [dx, dy, dz]):
-            print 'KKT solver FAILS: max(dx=%g, dy=%g, dz=%g) > tol = %g' % \
-                (dx, dy, dz, tol)
+            print('KKT solver FAILS: max(dx=%g, dy=%g, dz=%g) > tol = %g' % \
+                (dx, dy, dz, tol))
             success = False
-        print 'KKT solver succeeds: dx=%g, dy=%g, dz=%g' % (dx, dy, dz)
+        print('KKT solver succeeds: dx=%g, dy=%g, dz=%g' % (dx, dy, dz))
     return success
 
 def test_Gfunc( ntrials=10, tol=1e-10):
@@ -1095,9 +1095,9 @@ def test_Gfunc( ntrials=10, tol=1e-10):
         dy = np.max(np.abs(y - yp))
         if (dy > tol):
             success = False
-            print 'G function FAILS for trans=N: dy=%g' % dy
+            print('G function FAILS for trans=N: dy=%g' % dy)
         else:
-            print 'G function succeeds for trans=N: dy=%g' % dy
+            print('G function succeeds for trans=N: dy=%g' % dy)
             
         trans = 'T'
         nx = K*(K+1)/2 + K*(K+1)*(K+1)
@@ -1118,9 +1118,9 @@ def test_Gfunc( ntrials=10, tol=1e-10):
         dy = np.max(np.abs(y - yp))
         if (dy > tol):
             success = False
-            print 'G function FAILS for trans=T: dy=%g' % dy
+            print('G function FAILS for trans=T: dy=%g' % dy)
         else:
-            print 'G function succeeds for trans=T: dy=%g' % dy
+            print('G function succeeds for trans=T: dy=%g' % dy)
 
     return success
 
@@ -1149,11 +1149,11 @@ def test_sumdR2( ntrials=10, tol=1e-9):
         delta = np.max(np.abs(ddR2 - ddR2p))
         if (delta > tol):
             success = False
-            print 'sum dR test FAILED: delta=%g > tol=%g' % (delta, tol)
+            print('sum dR test FAILED: delta=%g > tol=%g' % (delta, tol))
         else:
-            print 'sum dR test succeeds: delta=%g' % delta
-    print 'Timing for naive sum dR: %f seconds per call.' % (tnaive/ntrials)
-    print 'Timing for aligned sum dR: %f seconds per call.' % (tfast/ntrials)
+            print('sum dR test succeeds: delta=%g' % delta)
+    print('Timing for naive sum dR: %f seconds per call.' % (tnaive/ntrials))
+    print('Timing for aligned sum dR: %f seconds per call.' % (tfast/ntrials))
     return success
 
 def test_relative_only():
@@ -1163,7 +1163,7 @@ def test_relative_only():
     sij = 0.5*(sij + sij.T)
     for i in range(K): sij[i,i] = np.inf
     nij = A_optimize_fast( sij)
-    print nij
+    print(nij)
 
 def unit_test():
     test_Gfunc( ntrials=100)
@@ -1195,8 +1195,8 @@ if __name__ == '__main__':
     nij = A_optimize_fast( sij, N, nsofar, only_include_measurements)
     tend = time.time()
     tlapse = tend - tstart
-    print 'Fast A-optimize took %g seconds.' % tlapse
-    # print nij
+    print('Fast A-optimize took %g seconds.' % tlapse)
+    # print(nij)
 
     if (K>=80):
         import sys
@@ -1206,6 +1206,6 @@ if __name__ == '__main__':
     nij0 = update_A_optimal_sdp( sij, N, nsofar, only_include_measurements)
     tend = time.time()
     tlapse = tend - tstart
-    print 'SDP A-optimize took %g seconds.' % tlapse
+    print('SDP A-optimize took %g seconds.' % tlapse)
     
-    print 'dn=', np.max(np.abs( nij0 - nij))
+    print('dn=', np.max(np.abs( nij0 - nij)))

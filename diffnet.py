@@ -173,7 +173,7 @@ def A_optimize( sij, nadd=1., nsofar=None, delta=None,
                                only_include_measurements)
     else:
         if delta is not None:
-            raise ValueError, 'Currently delta values are only supported in A-optimal by the conelp method.'
+            raise ValueError('Currently delta values are only supported in A-optimal by the conelp method.')
         if nsofar is None:
             nij = A_optimize_sdp( sij)
             nij *= nadd
