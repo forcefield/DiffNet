@@ -662,8 +662,8 @@ def Aopt_GhA( si2, nsofar=None, di2=None, G_as_function=False):
     if nsofar is None:
         F = matrix( 0., (K, K))
     else:
-        F = Fisher_matrix( si2, nsofar, di2)
-    if di2 is not None: F[::K+1] = di2
+        F = Fisher_matrix( si2, nsofar)
+    if di2 is not None: F[::K+1] += matrix(di2[:])
     elif np.all( np.diag( si2) == 0):
         # If the diagonal elements of 1/s[i,i]^2 are all zero, the Fisher
         # information matrix is singular, and the quantities are determined
