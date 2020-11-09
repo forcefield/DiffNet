@@ -21,7 +21,7 @@ def diffnet_to_graph( A, origins='O'):
         if origins is None: origins = 'O'
         g.add_node( origins)
         origins = [ origins ]*A.shape[0]
-    for i in xrange( A.shape[0]):
+    for i in range( A.shape[0]):
         if A[i][i] != 0:
             g.remove_edge( i, i)
         g.add_edge( origins[i], i, weight=A[i][i])
@@ -69,7 +69,7 @@ def draw_diffnet_graph( g, pos=None, ax=None,
     K = g.number_of_nodes() - len(origins)
 
     if isinstance( pos, np.ndarray):
-        mypos = dict( [(i, pos[i]) for i in xrange(K)])
+        mypos = dict( [(i, pos[i]) for i in range(K)])
         if (len(pos) == K):
             for d, o in enumerate(origins):
                 mypos.update( {o : (-1.0*d, -1.0*d)})

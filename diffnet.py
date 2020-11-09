@@ -50,8 +50,8 @@ def sum_upper_triangle( x):
     '''
     if not isinstance(x, matrix): x = matrix( x)
     s = 0.
-    for i in xrange( x.size[0]):
-        for j in xrange( i, x.size[1]):
+    for i in range( x.size[0]):
+        for j in range( i, x.size[1]):
             s += x[i,j]
     return s
 
@@ -78,10 +78,10 @@ def lndetC( sij, x, hessian=False):
     K = sij.size[0]
     M = K*(K+1)/2
     F = matrix( 0., (K, K))
-    for i in xrange( K):
+    for i in range( K):
         # n_{ii}*v_{ii}.v_{ii}^t
         F[i,i] += x[i]/(sij[i,i]*sij[i,i])
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             m = measurement_index( i, j, K)
             v2 = x[m]/(sij[i,j]*sij[i,j])
             F[i,i] += v2
@@ -90,32 +90,32 @@ def lndetC( sij, x, hessian=False):
     C = linalg.inv( F)
     fval = -np.log(linalg.det( F))
     df = matrix( 0., (1, M))
-    for i in xrange( K):
+    for i in range( K):
         df[i] = -C[i,i]/(sij[i,i]*sij[i,i])
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             m = measurement_index( i, j, K)
             df[m] = (2*C[i,j] - C[i,i] - C[j,j])/(sij[i,j]*sij[i,j])
     if not hessian: 
         return (fval, df)
     # Compute the Hessian
     d2f = matrix( 0., (M, M))
-    for i in xrange( K):
-        for j in xrange( i, K):
+    for i in range( K):
+        for j in range( i, K):
             # d^2/dx_i dx_j = C_{ij}^2/(s_{ii}^2 s_{jj}^2)
             d2f[i, j] = C[i,j]*C[i,j]/(sij[i,i]*sij[i,i]*sij[j,j]*sij[j,j])
             d2f[j, i] = d2f[i, j]
-        for i2 in xrange( K):
-            for j2 in xrange( i2+1, K):
+        for i2 in range( K):
+            for j2 in range( i2+1, K):
                 m2 = measurement_index( i2, j2, K)
                 # d^2/dx_id_x(i',j') = (C_{ii'}-C_{ji'})^2/(s_{i'i'}^2 s_{ij}^2)
                 dC = C[i2,i] - C[j2,i]
                 d2f[i, m2] = dC*dC/(sij[i,i]*sij[i,i]*sij[i2,j2]*sij[i2,j2])
                 d2f[m2, i] = d2f[i, m2]
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             m = measurement_index( i, j, K)
             invs2 = 1/(sij[i,j]*sij[i,j])
-            for i2 in xrange( i, K):
-                for j2 in xrange( i2+1, K):
+            for i2 in range( i, K):
+                for j2 in range( i2+1, K):
                     m2 = measurement_index( i2, j2, K)
                     # d^2/dx_{ij}dx_{i'j'} = 
                     # (C_{ii'}+C_{jj'}-C_{ji'}-C_{ij'})^2/(s_{i'j'}^2 s_{ij}^2)
@@ -173,7 +173,7 @@ def A_optimize( sij, nadd=1., nsofar=None, delta=None,
                                only_include_measurements)
     else:
         if delta is not None:
-            raise ValueError, 'Currently delta values are only supported in A-optimal by the conelp method.'
+            raise ValueError('Currently delta values are only supported in A-optimal by the conelp method.')
         if nsofar is None:
             nij = A_optimize_sdp( sij)
             nij *= nadd
@@ -212,9 +212,9 @@ def D_optimize( sij):
 
     def F( x=None, z=None):
         if x is None:
-            x0 = matrix( [ sij[i,i] for i in xrange( K) ] + 
-                         [ sij[i,j] for i in xrange( K) 
-                           for j in xrange( i+1, K) ], (M, 1))
+            x0 = matrix( [ sij[i,i] for i in range( K) ] + 
+                         [ sij[i,j] for i in range( K) 
+                           for j in range( i+1, K) ], (M, 1))
             return (0, x0)
         if z is None:
             return lndetC( sij, x)
@@ -246,8 +246,8 @@ def constant_relative_error( si):
     K = len(si)
     si = np.sort( si)
     sij = np.diag( si)
-    for i in xrange( K):
-        for j in xrange( i+1, K):
+    for i in range( K):
+        for j in range( i+1, K):
             sij[i,j] = sij[j,i] = si[j] - si[i]
     return matrix( sij)
 
@@ -260,7 +260,7 @@ def A_optimize_const_relative_error( si):
 
     nij = np.zeros( (K, K), dtype=float)
     N = nij[0,0] = np.sqrt( K)*si[0]
-    for i in xrange(K-1):
+    for i in range(K-1):
         nij[i+1, i] = nij[i, i+1] = np.sqrt(K - (i+1))*(si[i+1] - si[i])
         N += nij[i, i+1]
     
@@ -278,7 +278,7 @@ def D_optimize_const_relative_error( si):
     iK = 1./K
     nij = np.zeros( (K, K), dtype=float)
     nij[0,0] = iK
-    for i in xrange(K-1):
+    for i in range(K-1):
         nij[i,i+1] = nij[i+1,i] = iK
 
     return matrix( nij)
@@ -323,10 +323,10 @@ def E_optimize( sij):
     # G[i*K + j] = (v_m.v_m^t)[i,j]
     G = matrix( 0., (K*K, M+1))
     h = matrix( 0., (K, K))
-    for i in xrange( K):
+    for i in range( K):
         G[i*(K+1), i] = 1./(sij[i,i]*sij[i,i])
         G[i*(K+1), M] = 1.  # The column-major identity matrix for t.
-        for j in xrange( i+1, K):
+        for j in range( i+1, K):
             m = measurement_index( i, j, K)
             v2 = 1./(sij[i,j]*sij[i,j])
             G[j*K + i, m] = G[i*K + j, m] = -v2
@@ -366,7 +366,7 @@ def Dijkstra_shortest_path( sij):
 
     while q:
         d, u = heapq.heappop( q)
-        for v in xrange( K):
+        for v in range( K):
             suv = sij[u,v] if u != K else sij[v,v]
             dp = d + suv
             if dp < dist[v]:
@@ -407,7 +407,7 @@ def E_optimal_tree( sij):
     # For each node, compute \sum_{j \elem T_i} a_j, where j runs over
     # the set of nodes in the subtree T_i rooted at i, including i itself.
     suma = np.zeros( K, dtype=float)
-    for v in xrange( K):
+    for v in range( K):
         suma[v] += a[v]
         u = prev[v]
         # Follow up the tree until the root at the origin
@@ -417,7 +417,7 @@ def E_optimal_tree( sij):
 
     # n_{i\mu_i} = s_{i\mu_i} \lambda \sum_{j\elem T_i} a_j
     nij = matrix( 0., (K, K))
-    for i in xrange( K):
+    for i in range( K):
         j = prev[i]
         if j!=K: # not the origin
             nij[i,j] = sij[i,j]*suma[i]
@@ -513,7 +513,7 @@ def MLestimate( xij, invsij2, x0=None, di2=None):
     # z_i = \sigma_i^{-2} x_i + \sum_{j\neq i} \sigma_{ij}^{-2} x_{ij}
     z = np.sum( invsij2*xij, axis=1)  
     if di2 is not None and x0 is not None:
-        for i in xrange( len(z)):
+        for i in range( len(z)):
             if x0[i] is not None and x0[i] is not np.nan and di2[i] != 0:
                 z[i] += di2[i]*x0[i]
     
@@ -574,7 +574,7 @@ def covariance( invv, delta=None):
     if np.all( np.diag(f) == 0) and delta is None:
         return covariance_singular_Fisher( f)
     F = np.diag( np.sum(f, axis=1) )
-    for k in xrange(K): f[k,k] = 0
+    for k in range(K): f[k,k] = 0
     F -= f
     if delta is not None:
         di2 = np.square( 1/delta)
@@ -632,15 +632,15 @@ def round_to_integers( n):
     nceilsum = 0
     edges = []
     nint = np.zeros( (K, K), dtype=int)
-    for i in xrange(K):
-        for j in xrange(i, K):
+    for i in range(K):
+        for j in range(i, K):
             nsum += n[i,j]
             nint[i,j] = nint[j,i] = int(np.ceil( n[i,j]))
             nceilsum += nint[i,j]
             heapq.heappush( edges, (-n[i,j], (i,j)))
     nsum = int(np.floor(nsum + 0.5))
     surplus = nceilsum - nsum
-    for k in xrange( surplus):
+    for k in range( surplus):
         d, (i, j) = heapq.heappop( edges)
         nint[i,j] -= 1
         nint[j,i] = nint[i,j]
@@ -747,9 +747,9 @@ def sparse_A_optimal_network( sij, nadd=1., nsofar=None,
     G.add_node( 'O')
     edges = []
     
-    for i in xrange(K):
+    for i in range(K):
         edges.append( ('O', i, weight( i,i)))
-        for j in xrange(i+1, K):
+        for j in range(i+1, K):
             edges.append( (i, j, weight(i,j)))
     edges = list(nx.k_edge_augmentation( G, k=connectivity, partial=True))
     
@@ -771,13 +771,13 @@ def sparse_A_optimal_network( sij, nadd=1., nsofar=None,
     # network.
     if (len(only_include_measurements) < n_measure):
         indices = []
-        for i in xrange(K):
-            for j in xrange(i, K):
+        for i in range(K):
+            for j in range(i, K):
                 if (i,j) in only_include_measurements:
                     continue
                 heapq.heappush( indices, (weight(i,j), (i,j)))
         addition = []
-        for m in xrange(n_measure - len(only_include_measurements)):
+        for m in range(n_measure - len(only_include_measurements)):
             _w, (i,j) = heapq.heappop( indices)
             addition.append( (i,j))
         only_include_measurements.update( addition)

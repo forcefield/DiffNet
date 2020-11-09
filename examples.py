@@ -28,14 +28,14 @@ def distance_net( K, dim=2, rmin=0):
     x = 2.*(np.random.rand( K, dim) - 0.5)
     dij = matrix( 0., (K, K))
     
-    for i in xrange( K):
+    for i in range( K):
         dij[i,i] = np.sqrt(x[i].dot(x[i]))
         if rmin>0 and dij[i,i]<rmin:
             x[i] *= (rmin/dij[i,i])
             dij[i,i] = rmin
 
-    for i in xrange( K):
-        for j in xrange( i+1, K):
+    for i in range( K):
+        for j in range( i+1, K):
             dx = x[i] - x[j]
             dij[i,j] = np.sqrt(dx.dot(dx))
             dij[j,i] = dij[i,j]
@@ -117,7 +117,7 @@ def benchmark_diffnet( sij_generator, ntimes=100,
                         np.zeros( nbins, dtype=float),
                         [], [] ]) for o in optimalities ])
     nfails = 0
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         if constant_relative_error:
             results = dict()
             si, sij = sij_generator()
@@ -140,8 +140,8 @@ def benchmark_diffnet( sij_generator, ntimes=100,
             n[n<0] = 0
             nos = ssum*n/sij
             d = np.diag( nos)
-            u = [ nos[i,j] for i in xrange( n.shape[0])
-                  for j in xrange( i+1, n.shape[0]) ]
+            u = [ nos[i,j] for i in range( n.shape[0])
+                  for j in range( i+1, n.shape[0]) ]
             hd, _ = np.histogram( d, bins, density=False)
             hu, _ = np.histogram( u, bins, density=False)
             topo[o][0] += hd
@@ -221,7 +221,7 @@ def benchmark_sparse_net( K=30, measure_per=3, connectivity=3,
     ratio = np.zeros( ntimes)
     n_measure = int(measure_per*K)
     ncutoff = 1./(10.*n_measure)
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         sij = random_net_sij_generator( K, sii_offset, sij_min, sij_max)
         nij = A_optimize( sij)
         trC = np.trace( covariance( cvxopt.div(nij, sij**2)))
@@ -245,8 +245,8 @@ def analyze_uniform_net( pmax=6, dmax=25., Nd=20):
         varoffdiag = np.zeros( (pmax, len(d)), dtype=float))
 
     def triu( A):
-        return [ A[i,j] for i in xrange(A.size[0]) 
-                 for j in xrange(i+1, A.size[0]) ]
+        return [ A[i,j] for i in range(A.size[0]) 
+                 for j in range(i+1, A.size[0]) ]
 
     ps = np.arange(1, pmax+1)
     for p in ps:
@@ -270,7 +270,7 @@ def benchmark_E_tree( K=30, ntimes=100):
     import time
     timings = dict(Etree=np.zeros( ntimes), E=np.zeros( ntimes))
     dn = 0.
-    for t in xrange( ntimes):
+    for t in range( ntimes):
         sij = random_net_sij_generator(K=K)
         start = time.time()
         nijEt = E_optimal_tree( sij)
@@ -327,7 +327,7 @@ def write_average( avg):
         for j, o in enumerate( avg[s]):
             data[j,i] = avg[s][o]
     print '# %s' % (' '.join( [ '%5s' % s for s in header ]))
-    for j in xrange(data.shape[0]):
+    for j in range(data.shape[0]):
         print '  ' + (' '.join( [ '%5.2f' % r for r in data[j] ])),
         print ' # %s' % rows[j]
     

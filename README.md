@@ -72,10 +72,10 @@ while not converged:
     # nij = A_optimize( sij)  # call this if not using iterative optimization.
     # nij[nij < ncut] = 0  # Omit pairs with impractically small allocations.
     nij = round_to_integers( nij)
-    for i in xrange(nmols):
+    for i in range(nmols):
         if nij[i,i] > 0:
             __individual_free_energy__( mols[i], nsamples=nij[i,i], ...)
-        for j in xrange(i+1, nmols):
+        for j in range(i+1, nmols):
             if nij[i,j] == 0: continue        
             # Compute the relative free energy between i and j,
             # using nij[i,j] number of samples.
